@@ -30,7 +30,7 @@ pub struct RemoteKeyEvent {
 
 /// A diagnostic / log message sent from the input listener to the webview console.
 #[derive(Debug, Clone, Serialize)]
-#[allow(dead_code)]
+#[cfg(target_os = "linux")]
 pub struct DiagnosticMessage {
     /// Always "diagnostic"
     #[serde(rename = "type")]
@@ -43,7 +43,7 @@ pub struct DiagnosticMessage {
 
 /// Send a diagnostic message through the key-event channel.
 /// The async event loop in lib.rs will forward it to the webview console.
-#[allow(dead_code)]
+#[cfg(target_os = "linux")]
 pub fn send_diagnostic(sender: &UnboundedSender<String>, level: &str, message: &str) {
     let diag = DiagnosticMessage {
         msg_type: "diagnostic".into(),
