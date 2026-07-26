@@ -22,7 +22,14 @@ fi
 if ! command -v cargo &>/dev/null; then
     info "Installing Rust via rustup..."
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-    source "$HOME/.cargo/env"
+
+    # Source the env file matching the current shell
+    case "$SHELL" in
+        *fish) source "$HOME/.cargo/env.fish" ;;
+        *nu)   source "$HOME/.cargo/env.nu" ;;
+        *)     source "$HOME/.cargo/env" ;;
+    esac
+
     info "✓ Rust installed: $(rustc --version)"
 else
     info "✓ Rust already installed: $(rustc --version)"
@@ -50,3 +57,13 @@ info "Building the app..."
 npm run tauri build
 
 info "✅ Done! App binary at: src-tauri/target/release/zattoo-remote"
+
+# Remind about cargo PATH for future terminals (especially fish shell)
+case "$SHELL" in
+    *fish)
+        echo ""
+        echo -e "${YELLOW}[!] In new terminals, run:${NC}"
+        echo "    source \"\$HOME/.cargo/env.fish\""
+        echo "    (or add it to ~/.config/fish/config.fish for persistence)"
+        ;;
+esac
