@@ -151,6 +151,33 @@ sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev
 sudo pacman -S webkit2gtk-4.1 gtk3 libappindicator-gtk3
 ```
 
+### macOS Setup
+
+```bash
+# 1. Install Xcode Command Line Tools (if not already installed)
+xcode-select --install
+
+# 2. Install Rust (if not already installed)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+
+# 3. Install npm dependencies
+npm install
+
+# 4. Download Playwright browser for E2E tests
+npx playwright install chromium
+
+# 5. Build the app
+npm run tauri build
+```
+
+> The binary will be at `src-tauri/target/release/zattoo-remote`.
+> Rust is **required** — Tauri uses it to compile the native macOS shell (`cargo` is not included with macOS).
+
+**macOS Permissions**
+- **Accessibility:** System Settings → Privacy & Security → Accessibility → grant permission to your terminal or the app (required for global keyboard capture via `rdev`)
+- **Media keys:** System Settings → Keyboard → Keyboard Shortcuts → Media → enable the app (if media keys are intercepted by macOS)
+
 ---
 
 ## Getting Started
@@ -279,6 +306,8 @@ RUST_LOG=debug npm run tauri dev
 ### Global input not working
 - **Linux:** Ensure you're on X11, not Wayland. Run `echo $XDG_SESSION_TYPE` to check.
 - **macOS:** Enable Accessibility permission for the app/terminal.
+  After granting, fully quit and re-launch the app — the permission applies at launch time.
+  Verify in Console.app: search for `rdev` or `input_handler` log entries.
 - **Windows:** No special permissions needed.
 
 ### Zattoo doesn't load or login fails (403 / DNS errors)
