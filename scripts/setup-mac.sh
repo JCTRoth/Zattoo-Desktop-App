@@ -43,6 +43,9 @@ fi
 info "✓ Playwright chromium installed"
 
 # ── 5. Build ─────────────────────────────────────────────────────────
+# Tauri v2 requires a frontendDist directory to exist, even though this
+# app loads Zattoo directly (no local frontend).
+mkdir -p dist
 info "Building the app..."
 npm run tauri build
 

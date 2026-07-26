@@ -5,7 +5,7 @@
   "identifier": "com.zattoo.remote",
   "build": {
     "frontendDist": "../dist",
-    "beforeBuildCommand": "echo 'Frontend not needed (direct Zattoo URL)'"
+    "beforeBuildCommand": "mkdir -p ../dist && echo 'Frontend not needed (direct Zattoo URL)'"
   },
   "app": {
     "withGlobalTauri": true,
