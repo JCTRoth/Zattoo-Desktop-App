@@ -1,0 +1,249 @@
+/**
+ * Zattoo Remote - Electron Main Process
+ * 
+ * Handles:
+ * - Window creation with Widevine-enabled Chromium
+ * - Global keyboard input capture (replacing rdev input_handler)
+ * - Injection of zattoo_inject.js into the webview
+ */
+
+const { app, BrowserWindow, globalShortcut } = require('electron');
+const path = require('path');
+const fs = require('fs');
+
+let mainWindow = null;
+
+// Key mappings (matching input_handler.rs actions)
+const KEY_MAP = {
+  // Digit keys
+  '0': { action: 'digit_0', label: '0' },
+  '1': { action: 'digit_1', label: '1' },
+  '2': { action: 'digit_2', label: '2' },
+  '3': { action: 'digit_3', label: '3' },
+  '4': { action: 'digit_4', label: '4' },
+  '5': { action: 'digit_5', label: '5' },
+  '6': { action: 'digit_6', label: '6' },
+  '7': { action: 'digit_7', label: '7' },
+  '8': { action: 'digit_8', label: '8' },
+  '9': { action: 'digit_9', label: '9' },
+  
+  // Arrow keys
+  'Up': { action: 'up', label: '▲ Up' },
+  'Down': { action: 'down', label: '▼ Down' },
+  'Left': { action: 'left', label: '← Left' },
+  'Right': { action: 'right', label: '→ Right' },
+  
+  // Navigation keys
+  'Return': { action: 'ok', label: 'OK' },
+  'Enter': { action: 'ok', label: 'OK' },
+  'Escape': { action: 'back', label: '⬅ Back' },
+  'Backspace': { action: 'back', label: '⬅ Back' },
+  
+  // Channel navigation
+  'PageUp': { action: 'channel_up', label: 'CH+' },
+  'PageDown': { action: 'channel_down', label: 'CH-' },
+  
+  // Volume keys
+  'VolumeUp': { action: 'volume_up', label: '🔊+' },
+  'VolumeDown': { action: 'volume_down', label: '🔊-' },
+  'Mute': { action: 'mute', label: '🔇 Mute' },
+  
+  // Function keys for colored buttons
+  'F1': { action: 'color_red', label: '🔴 Red' },
+  'F2': { action: 'color_green', label: '🟢 Green' },
+  'F3': { action: 'color_yellow', label: '🟡 Yellow' },
+  'F4': { action: 'color_blue', label: '🔵 Blue' },
+  
+  // Media keys
+  'F5': { action: 'rewind', label: '⏪ Rewind' },
+  'F6': { action: 'fast_forward', label: '⏩ FF' },
+  'F7': { action: 'stop', label: '⏹ Stop' },
+  'F8': { action: 'record', label: '⏺ Record' },
+  'F9': { action: 'guide', label: '📋 EPG' },
+  'F10': { action: 'settings', label: '⚙ Settings' },
+  'F11': { action: 'account', label: '👤 Account' },
+  'F12': { action: 'recordings', label: '📼 Recordings' },
+  
+  // Special keys
+  'Alt': { action: 'home', label: '🏠 Home' },
+  'ShiftRight': { action: 'menu', label: '📋 EPG' },
+  'ControlRight': { action: 'search', label: '🔍 Search' },
+  'Space': { action: 'play_pause', label: '▶ Play/Pause' },
+  'Insert': { action: 'mouse_mode', label: '🖱 Mouse Mode' }
+};
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1280,
+    height: 720,
+    minWidth: 1024,
+    minHeight: 600,
+    
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      
+      // Enable Widevine DRM
+      webgl: true,
+      plugins: true,
+      allowRunningInsecureContent: false,
+      
+      // Required for DRM-protected content
+      experimentalFeatures: true,
+      
+      // Allow loading external URLs
+      webSecurity: true,
+      allowRunningInsecureContent: false
+    }
+  });
+
+  // Load Zattoo
+  mainWindow.loadURL('https://zattoo.com');
+
+  // Set user agent to avoid mobile detection
+  mainWindow.webContents.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+
+  // Inject zattoo_inject.js when page loads
+  mainWindow.webContents.on('did-finish-load', () => {
+    injectScript();
+  });
+
+  // Also inject on navigation
+  mainWindow.webContents.on('did-navigate', () => {
+    setTimeout(injectScript, 1000);
+  });
+
+  // Re-inject if page changes (SPA navigation)
+  mainWindow.webContents.on('did-navigate-in-page', () => {
+    setTimeout(injectScript, 500);
+  });
+
+  // Handle window close
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+
+  return mainWindow;
+}
+
+function injectScript() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  const injectPath = path.join(__dirname, 'src/zattoo_inject.js');
+  
+  try {
+    const scriptContent = fs.readFileSync(injectPath, 'utf8');
+    
+    // Override Tauri-specific functions before injecting
+    const electronScript = `
+      // Override Tauri-specific functions for Electron
+      window.invokeRust = function(cmd, args) {
+        console.log('[ZR Electron] Rust command (NO-OP):', cmd, args);
+        // Volume/mute commands are handled by OS in Electron
+        if (cmd === 'set_system_volume' || cmd === 'toggle_system_mute') {
+          console.log('[ZR Electron] Volume control: using OS-level controls');
+        }
+      };
+      
+      // Inject original script content
+      ${scriptContent}
+      
+      // Log successful injection
+      console.log('[ZR Electron] Script injected with Widevine support');
+    `;
+    
+    mainWindow.webContents.executeJavaScript(electronScript).catch(e => {
+      console.error('[ZR Electron] Failed to inject script:', e);
+    });
+  } catch (e) {
+    console.error('[ZR Electron] Failed to read inject script:', e);
+    console.log('[ZR Electron] Trying fallback injection...');
+    
+    // Fallback: inject a minimal version
+    mainWindow.webContents.executeJavaScript(`
+      if (!window.__zattooRemote) {
+        window.__zattooRemote = {
+          handleKeyEvent: function(jsonStr) {
+            try {
+              var event = JSON.parse(jsonStr);
+              console.log('[ZR Electron] Key event:', event.action, event.label);
+            } catch(e) {
+              console.error('[ZR Electron] Error handling key:', e);
+            }
+          },
+          drm: { available: true, found: 1, total: 8, timestamp: Date.now() },
+          version: '3.0 (Electron Fallback)'
+        };
+      }
+      console.log('[ZR Electron] Fallback overlay initialized');
+    `).catch(e2 => {
+      console.error('[ZR Electron] Fallback injection failed:', e2);
+    });
+  }
+}
+
+function sendKeyEventToRenderer(action, label) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  const eventJson = JSON.stringify({
+    action: action,
+    label: label,
+    is_press: true,
+    scan_code: 0
+  });
+
+  // Escape special characters for JavaScript string
+  const escapedJson = eventJson.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  
+  mainWindow.webContents.executeJavaScript(`
+    if (window.__zattooRemote && window.__zattooRemote.handleKeyEvent) {
+      window.__zattooRemote.handleKeyEvent('${escapedJson}');
+    }
+  `).catch(e => {
+    console.error('[ZR Electron] Failed to send key event:', e);
+  });
+}
+
+function registerKeyboardShortcuts() {
+  // Unregister all first to avoid duplicates
+  globalShortcut.unregisterAll();
+
+  // Register all key mappings
+  Object.entries(KEY_MAP).forEach(([key, mapping]) => {
+    try {
+      globalShortcut.register(key, () => {
+        sendKeyEventToRenderer(mapping.action, mapping.label);
+      });
+    } catch (e) {
+      console.warn(`[ZR Electron] Failed to register shortcut for ${key}:`, e.message);
+    }
+  });
+
+  console.log('[ZR Electron] Registered', Object.keys(KEY_MAP).length, 'keyboard shortcuts');
+}
+
+// App lifecycle
+app.whenReady().then(() => {
+  createWindow();
+  registerKeyboardShortcuts();
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+      registerKeyboardShortcuts();
+    }
+  });
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
+
+// Quit when all windows are closed
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+});

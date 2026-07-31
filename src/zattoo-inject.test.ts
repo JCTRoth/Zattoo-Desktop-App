@@ -21,7 +21,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const injectScriptPath = resolve(
   __dirname,
-  "../src-tauri/src/zattoo_inject.js"
+  "./zattoo_inject.js"
 );
 const injectScript = readFileSync(injectScriptPath, "utf-8");
 

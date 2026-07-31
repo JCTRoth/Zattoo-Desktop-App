@@ -3,7 +3,6 @@ node_modules/
 
 # Build output
 dist/
-src-tauri/target/
 
 # IDE
 .vscode/
@@ -22,10 +21,6 @@ e2e/.env
 
 # Logs
 *.log
-
-
-# Created by https://www.toptal.com/developers/gitignore/api/images,visualstudiocode,rust,video
-# Edit at https://www.toptal.com/developers/gitignore?templates=images,visualstudiocode,rust,video
 
 ### Images ###
 # JPEG

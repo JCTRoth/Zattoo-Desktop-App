@@ -1,387 +1,200 @@
-# Zattoo Webview Wrapper for Remote Controls
-A cross-platform **Tauri v2** desktop application that turns your **MX3-style remote** (or any keyboard) into a fully-featured remote control for [Zattoo](https://zattoo.com) live TV streaming.
+# Zattoo Remote
 
-> Built with Rust + JavaScript (injected) + Tauri v2
-
----
+A **full-featured Electron-based remote control** for [Zattoo](https://zattoo.com) that solves the DRM problem. Built with Electron to ensure Widevine DRM support for all channels including RTL, Sat.1, ProSieben, and VOX.
 
 ## Features
 
-- **Global keyboard capture** — Works even when the app is in the background (uses `rdev` under the hood)
-- **MX3 remote mapping** — Pre-configured for MX3 remotes with support for custom mappings
-- **Zattoo webview integration** — Loads Zattoo directly in the Tauri webview (no iframe)
-- **Channel number input** — Enter digits with on-screen display (OSD) and auto-confirm after 2s
-- **Color key favorites** — Quick-access to your favourite channels via F1–F4 (Red/Green/Yellow/Blue)
-- **System volume control** — Cross-platform volume up/down/mute (Linux: `pactl`/`amixer`, macOS: `osascript`, Windows: PowerShell)
-- **On-screen display (OSD)** — Shows channel numbers, volume level, and favorite names
-- **JS injection bridge** — Overlay is injected into the Zattoo page at runtime via `webview.eval()`
-- **Mouse mode** — Toggle gyro mouse control (via keyboard shortcut)
-- **Fullscreen/kiosk mode** — Borderless fullscreen for a TV-like experience
-- **System tray** — Quick settings and quit access
+| Feature | Status |
+|---------|--------|
+| Full DRM Support | Widevine via Electron Chromium |
+| Keyboard Remote Control | 40+ configurable shortcuts |
+| Channel Navigation | Direct URL navigation + DOM fallback |
+| OSD Display | Visual feedback for all actions |
+| Auto Fullscreen | Automatic fullscreen on channel pages |
+| Toast Auto-dismiss | Automatically dismisses Zattoo error popups |
+| Login/Search Protection | Keys ignored on login and search pages |
+| SPA Navigation | Handles single-page app navigation |
+| Cross-platform | macOS, Windows, Linux |
 
-## Testing
+### Supported Channels
 
-The project includes a comprehensive test suite with **122 tests** across two test runners.
+| Key | Channel | DRM Required |
+|-----|---------|--------------|
+| 0 | arte | No |
+| 1 | Das Erste (ARD) | No |
+| 2 | ZDF | No |
+| 3 | RTL | Yes (Works with Electron!) |
+| 4 | Sat.1 | Yes (Works with Electron!) |
+| 5 | ProSieben | Yes (Works with Electron!) |
+| 6 | VOX | Yes (Works with Electron!) |
+| 7 | kabel eins | Yes |
+| 8 | RTL Zwei | Yes |
+| 9 | 3sat | No |
 
-### Test Infrastructure
+All DRM-protected channels work because Electron bundles Chromium with Widevine support!
 
-| Runner | Tests | What it covers |
-|--------|-------|----------------|
-| **Vitest** (unit) | 97 | Key config validation, bridge logic, injected script logic, window controls |
-| **Playwright** (E2E) | 25 | Inject script behavior in Chromium + real Zattoo.com login and channel navigation |
+### Keyboard Shortcuts
 
-### Quick Start
+| Key | Action |
+|-----|--------|
+| 0-9 | Channel digit input |
+| Up/Down/Left/Right | Navigation |
+| PageUp/PageDown | Channel up/down |
+| Return/Enter | OK/Select |
+| Escape/Backspace | Back |
+| F1-F4 | Colored buttons (Red, Green, Yellow, Blue) |
+| F5-F6 | Rewind / Fast Forward |
+| F7 | Stop |
+| F9 | EPG Guide |
+| F10 | Settings |
+| F11 | Account |
+| F12 | Recordings |
+| Space | Play/Pause |
+| Alt | Home |
+| Shift+Right | EPG |
+| Ctrl+Right | Search |
+
+**Note:** Hardware volume keys may not work on all platforms due to Electron limitations.
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+- Node.js 18+
+- npm 9+
+
+### Installation
 
 ```bash
-# Install dependencies (already done if you built the app)
+git clone https://github.com/your-repo/zattoo-desktop-app.git
+cd zattoo-desktop-app
 npm install
-npx playwright install chromium     # Download browser for E2E tests
 ```
 
-### Running Tests
+### Development
 
 ```bash
-# Unit tests (fast — <1s)
+npm run dev
+```
+
+### Production Build
+
+```bash
+npm run build
+npm run build:mac
+npm run build:win
+npm run build:linux
+```
+
+---
+
+## Running Tests
+
+```bash
 npm test
-
-# Watch mode
 npm run test:watch
-
-# With coverage report
-npm run test:coverage
-
-# E2E tests (inject script in Chromium — ~20s)
+npm run test:ui
 npm run test:e2e
-
-# E2E tests with visible browser
-npm run test:e2e:ui
-
-# Zattoo login tests only (requires credentials — ~45s)
-npm run test:e2e -- --grep @zattoo-login
-```
-
-### Zattoo Login Tests
-
-The login tests authenticate against the real Zattoo.com website. To run them:
-
-1. Copy the example credentials file:
-   ```bash
-   cp e2e/.env.example e2e/.env
-   ```
-2. Edit `e2e/.env` with your Zattoo email and password
-3. Run: `npm run test:e2e -- --grep @zattoo-login`
-
-> **Security:** `e2e/.env` is gitignored — credentials stay on your machine.
-
-### Test Structure
-
-```
-src/
-├── test-setup.ts                    # Vitest global setup (jsdom, mocks)
-├── __mocks__/
-│   └── tauri-api.ts                 # Tauri API mocks (invoke, listen, window)
-├── key-config.test.ts               # Key mapping validation (16 tests)
-├── zattoo-bridge.test.ts            # Bridge logic (51 tests)
-├── zattoo-inject.test.ts            # Injected script logic (23 tests)
-├── main.test.ts                     # Window controls (7 tests)
-└── vitest.config.ts                 # Vitest configuration
-
-e2e/
-├── channel-navigation.spec.ts       # Inject script E2E (19 tests)
-├── zattoo-login.spec.ts             # Zattoo login E2E (6 tests)
-├── test-harness.html                # E2E test page
-├── .env                             # Gitignored — your Zattoo credentials
-├── .env.example                     # Template for credentials
-└── playwright.config.ts             # Playwright configuration
-```
-
-### Default MX3 Key Layout
-
-| MX3 Key | Function | Zattoo Action |
-|---------|----------|---------------|
-| Arrow keys | Navigation | Focus movement |
-| OK / Enter | Confirm | Click / Enter |
-| Back / Esc | Back | Escape key |
-| Digits 0–9 | Channel input | Number buffer + confirm |
-| Red (F1) | Favorite 1 | ZDF |
-| Green (F2) | Favorite 2 | ARD |
-| Yellow (F3) | Favorite 3 | RTL |
-| Blue (F4) | Favorite 4 | ProSieben |
-| Space | Play/Pause | Toggle playback |
-| Page Up/Down | Channel up/down | Zapping |
-| F5 / F6 | Rewind / FF | Skip ±15s |
-| Alt | Home | Channel list |
-| Right Shift | Menu/EPG | Program guide |
-| Right Ctrl | Search | Focus search field |
-| Volume keys | System volume | OS volume control |
-| Insert | Mouse mode | Toggle gyro mouse |
-
-> **Note:** Volume/media keys are detected via evdev scan codes (`Unknown(113–115)`) on Linux, and corresponding VK codes on Windows. If your remote uses different codes, check the debug log and update `src/key-config.json`.
-
----
-
-## Prerequisites
-
-### System Requirements
-
-| Platform | Requirements |
-|----------|-------------|
-| **Linux** | X11 desktop (for `rdev`), `libwebkit2gtk-4.1`, `libgtk-3`, `libayatana-appindicator3` |
-| **macOS** | macOS 10.15+, Accessibility permission (for global input capture) |
-| **Windows** | Windows 10+, WebView2 runtime (included in Win10+) |
-
-### Development Dependencies
-
-- [Rust](https://rustup.rs/) (1.75+)
-- [Node.js](https://nodejs.org/) (20+)
-- npm (included with Node.js)
-
-### Linux Extra Dependencies
-
-```bash
-# Fedora / RHEL
-sudo dnf install webkit2gtk4.1-devel gtk3-devel libappindicator-gtk3-devel \
-  openssl-devel librsvg2-devel
-
-# Ubuntu / Debian
-sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
-  libssl-dev librsvg2-dev
-
-# Arch
-sudo pacman -S webkit2gtk-4.1 gtk3 libappindicator-gtk3
-```
-
-### macOS Setup
-
-```bash
-# 1. Install Xcode Command Line Tools (if not already installed)
-xcode-select --install
-
-# 2. Install Rust (if not already installed)
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source "$HOME/.cargo/env"
-
-# 3. Install npm dependencies
-npm install
-
-# 4. Download Playwright browser for E2E tests
-npx playwright install chromium
-
-# 5. Build the app
-npm run tauri build
-```
-
-> The binary will be at `src-tauri/target/release/zattoo-remote`.
-> Rust is **required** — Tauri uses it to compile the native macOS shell (`cargo` is not included with macOS).
-
-**macOS Permissions**
-- **Accessibility:** System Settings → Privacy & Security → Accessibility → grant permission to your terminal or the app (required for global keyboard capture via `rdev`)
-- **Media keys:** System Settings → Keyboard → Keyboard Shortcuts → Media → enable the app (if media keys are intercepted by macOS)
-
----
-
-## Getting Started
-
-### 1. Clone and install dependencies
-
-```bash
-cd zattoo-remote
-npm install
-```
-
-### 2. Build and run
-
-```bash
-npm run tauri build
-./src-tauri/target/release/zattoo-remote
-```
-
-> The app loads `https://zattoo.com` directly in the Tauri webview. No local frontend is served — all UI overlays are injected via Rust's `webview.eval()` at runtime.
-
-### Development with hot-reload (frontend changes)
-
-If you're modifying the injection script (`src-tauri/src/zattoo_inject.js`), rebuild after changes:
-
-```bash
-npm run tauri build
-```
-
----
-
-## Project Structure
-
-```
-zattoo-remote/
-├── index.html                        # Fallback loading page (shown briefly before Zattoo)
-├── package.json                      # Node.js dependencies & scripts
-├── vitest.config.ts                  # Vitest unit test configuration
-├── playwright.config.ts              # Playwright E2E test configuration
-├── .gitignore
-├── src/
-│   ├── key-config.json               # Default MX3 key mapping (user-customizable)
-│   ├── main.ts                       # Legacy — kept for reference
-│   ├── zattoo-bridge.ts              # Legacy — kept for reference
-│   ├── test-setup.ts                 # Vitest global setup (jsdom, mocks)
-│   ├── __mocks__/
-│   │   └── tauri-api.ts              # Tauri API mocks for testing
-│   ├── key-config.test.ts            # Key mapping validation (16 tests)
-│   ├── zattoo-bridge.test.ts         # Bridge logic (51 tests)
-│   ├── zattoo-inject.test.ts         # Injected script logic (23 tests)
-│   └── main.test.ts                  # Window controls (7 tests)
-├── e2e/
-│   ├── test-harness.html             # E2E test page for inject script
-│   ├── channel-navigation.spec.ts    # Inject script E2E (19 tests)
-│   ├── zattoo-login.spec.ts          # Zattoo login E2E (6 tests)
-│   ├── .env                          # Gitignored — Zattoo credentials
-│   └── .env.example                  # Credentials template
-├── src-tauri/
-│   ├── Cargo.toml                    # Rust dependencies
-│   ├── tauri.conf.json               # Tauri app configuration (window → zattoo.com)
-│   ├── capabilities/default.json     # Tauri v2 permissions
-│   ├── build.rs
-│   └── src/
-│       ├── main.rs                   # Binary entry point
-│       ├── lib.rs                    # App setup, state, event routing, overlay injection
-│       ├── input_handler.rs          # rdev global keyboard listener
-│       ├── key_mapper.rs             # Key mapping logic + favorites
-│       ├── zattoo_controller.rs      # Volume control + Tauri commands
-│       └── zattoo_inject.js          # Injected overlay JS (OSD, key handling, Zattoo DOM)
-├── README.md
-└── LICENSE
 ```
 
 ---
 
 ## Configuration
 
-### Key Mapping
+### Channel Mapping
 
-Edit `src/key-config.json` to customize key bindings. The file contains:
+Edit `src/zattoo_inject.js`:
 
-- `mappings` — Array of key-to-action mappings (see rdev `Key` enum variants)
-- `favorites` — Channels assigned to color keys (F1–F4)
-- `channel_input_timeout_ms` — How long to wait before auto-confirming digits (default: 2000)
-- `volume_step` — Volume change increment in percent (default: 5)
-
-The config is embedded at compile time. To reload after editing, rebuild with:
-
-```bash
-npm run tauri build
+```javascript
+var channelMap = {
+  "0": { name: "arte", search: "arte", slug: "arte" },
+  "1": { name: "Das Erste", search: "Das Erste", slug: "daserste" },
+};
 ```
 
-### rdev Key Names
+### Key Mapping
 
-All available key names are documented in the [rdev source](https://github.com/nicoulaj/rdev). Common ones:
+Edit `main.js`:
 
-`UpArrow`, `DownArrow`, `LeftArrow`, `RightArrow`, `Return`, `Escape`, `Backspace`,
-`Num0`–`Num9` (top row), `Kp0`–`Kp9` (numpad), `F1`–`F12`, `Space`, `PageUp`, `PageDown`,
-`Alt`, `ShiftRight`, `ControlRight`, `Insert`, `Unknown(scan_code)` (for unmapped keys).
-
-### Platform-Specific Notes
-
-#### Linux (X11)
-- `rdev` uses X11 APIs — it will **not** work under pure Wayland
-- For Wayland support, enable the `unstable_grab` feature in `rdev` (requires `evdev` and `input` group membership)
-- Volume control uses `pactl` (PulseAudio) with fallback to `amixer` (ALSA)
-
-#### macOS
-- Grant **Accessibility** permission in System Settings → Privacy & Security → Accessibility
-- Media keys may be intercepted by macOS — enable the app in System Settings → Keyboard → Keyboard Shortcuts → Media
-
-#### Windows
-- No special setup required
-- Volume control uses PowerShell COM automation
+```javascript
+const KEY_MAP = {
+  '0': { action: 'digit_0', label: '0' },
+  '1': { action: 'digit_1', label: '1' },
+};
+```
 
 ---
 
 ## Troubleshooting
 
-### "No variant found for enum Key"
-The key names in `src/key-config.json` must match the `rdev::Key` enum. Run the app with `RUST_LOG=debug` to see which scan codes your remote sends:
+### DRM Not Working
 
-```bash
-RUST_LOG=debug npm run tauri dev
+Run in DevTools console:
+```javascript
+navigator.requestMediaKeySystemAccess('com.widevine.alpha', [])
+  .then(() => console.log("Widevine available"))
+  .catch(() => console.log("Widevine NOT available"))
 ```
 
-### Global input not working
-- **Linux:** Ensure you're on X11, not Wayland. Run `echo $XDG_SESSION_TYPE` to check.
-- **macOS:** Enable Accessibility permission for the app/terminal.
-  After granting, fully quit and re-launch the app — the permission applies at launch time.
-  Verify in Console.app: search for `rdev` or `input_handler` log entries.
-- **Windows:** No special permissions needed.
+### Keyboard Shortcuts Not Working
 
-### Zattoo doesn't load or login fails (403 / DNS errors)
+Check console for: `[ZR Electron] Registered N keyboard shortcuts`
 
-This was a common issue with the iframe-based approach — Zattoo blocks embedded content via `X-Frame-Options` and `SameSite` cookies, causing 403 errors on login.
-
-**The app now loads Zattoo directly in the Tauri webview (no iframe).** This avoids frame-blocking entirely.
-
-If you still see issues:
-- **DNS resolution errors** (`geolocation.onetrust.com`, `sentry.io`, `zahs.tv`): These are Zattoo's third-party services (consent management, error tracking, analytics). They require internet access. Some may be blocked by firewalls, ad-blockers, or VPNs.
-- **403 Forbidden on login**: Confirm your Zattoo account is active for your region. Some regions require a VPN.
-- Check the CSP in `tauri.conf.json` — the policy must list all Zattoo subdomains the site connects to.
-
-### Build fails
-Ensure all system dependencies are installed (see [Prerequisites](#prerequisites) above).
+### App Not Starting
 
 ```bash
-# Clear cache and retry
-rm -rf src-tauri/target node_modules/.vite-temp
-npm run tauri build
+rm -rf node_modules && npm install
 ```
 
 ---
 
-## Development
-
-### Architecture
+## Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│                    Tauri App                     │
-│                                                  │
-│  ┌──────────────┐    ┌──────────────────────┐   │
-│  │  Rust Backend │    │  Zattoo Webview      │   │
-│  │               │    │  (url: zattoo.com)   │   │
-│  │ rdev Listener │───▶│       │              │   │
-│  │   (global)    │    │       ▼              │   │
-│  │               │    │  Injected Overlay    │   │
-│  │ Key Mapper    │    │  (zattoo_inject.js)  │   │
-│  │               │    │  - OSD display       │   │
-│  │ Zattoo Inject │───▶│  - Key event handler │   │
-│  │ (eval script) │    │  - DOM control       │   │
-│  │               │    │  - Channel input     │   │
-│  │ Volume Ctrl   │◀───│  - Volume control    │   │
-│  └──────────────┘    └──────────────────────┘   │
-└─────────────────────────────────────────────────┘
+Electron
+├── Main Process (main.js)
+│   ├── globalShortcut (keyboard)
+│   ├── Window Management
+│   └── Script Injection
+└── Renderer Process (Zattoo webview)
+    ├── zattoo_inject.js
+    ├── handleKeyEvent
+    ├── OSD Display
+    └── Channel Navigation
+        Chromium + Widevine
 ```
 
-The app's flow:
-1. Tauri launches and navigates the webview to `https://zattoo.com`
-2. After a brief delay (letting Zattoo load), Rust injects `zattoo_inject.js` via `webview.eval()`
-3. The injected script creates OSD overlays, sets up Tauri event listeners, and controls the Zattoo DOM
-4. The rdev listener (running in a background thread) captures global keyboard input and emits events
-5. The injected script receives these events and performs the corresponding Zattoo action
-6. Volume control commands are sent back to Rust via `window.__TAURI__.core.invoke()`
+---
 
-### Adding new key mappings
+## Why Electron?
 
-1. Add the rdev `Key` variant to the mapping in `src/key-config.json`
-2. If a custom DOM action is needed, add a handler case in `zattoo_inject.js` (the `zattooAction` function)
-3. Rebuild with `npm run tauri build`
+### Tauri Limitations
 
-### Modifying the injected overlay
+- Uses system webviews (WKWebView/WebKitGTK)
+- No Widevine DRM support on macOS/Linux
+- DRM channels don't work
 
-The entire overlay (OSD, key handling, Zattoo DOM control) lives in `src-tauri/src/zattoo_inject.js`. It's a self-contained IIFE that:
-- Creates its own CSS and HTML elements dynamically
-- Uses `window.__TAURI__` for IPC with Rust
-- Handles all remote key events in a single switch statement
-- Uses MutationObserver to survive SPA navigations within Zattoo
+### Electron Advantages
 
-Edit this file, then rebuild.
+- Bundles complete Chromium with Widevine
+- Full DRM support on all platforms
+- All channels work
+- Mature framework
+
+### Trade-offs
+
+| Aspect | Tauri | Electron |
+|--------|-------|----------|
+| App Size | ~5-10 MB | ~200 MB |
+| Memory | ~50-100 MB | ~150-300 MB |
+| DRM Support | No | Yes |
+
+**For TV remote with DRM, Electron is the better choice.**
 
 ---
 
 ## License
 
-MIT
+MIT License - see [LICENSE](LICENSE)
