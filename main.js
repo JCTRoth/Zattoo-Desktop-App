@@ -218,7 +218,7 @@ function sendKeyEventToRenderer(action, label) {
 
 function setupWindowKeyboardListener() {
   // Primary keyboard input method: intercept before input reaches the page
-  // This is more reliable than globalShortcut for most keys
+  // This only works when the window has focus (which is what we want)
   if (mainWindow && mainWindow.webContents) {
     mainWindow.webContents.on('before-input-event', (event, input) => {
       // Only handle keyDown events
@@ -239,54 +239,15 @@ function setupWindowKeyboardListener() {
 }
 
 function registerKeyboardShortcuts() {
-  // Unregister all first to avoid duplicates
+  // Unregister all global shortcuts to avoid interference with system keys
+  // We only use window-based keyboard listener (before-input-event)
+  // which only captures keys when the app window has focus
   globalShortcut.unregisterAll();
-
-  // Register global shortcuts for keys that work with accelerators
-  // Note: globalShortcut is a fallback for when window doesn't have focus
-  const SUCCESSFUL_REGISTRATIONS = [];
-  
-  // Map of keys to Electron accelerator names
-  const acceleratorMap = {
-    'Backspace': 'Delete',
-    'Enter': 'Return',
-    'Escape': 'Esc',
-    'PageUp': 'PageUp',
-    'PageDown': 'PageDown',
-    'Up': 'Up',
-    'Down': 'Down',
-    'Left': 'Left',
-    'Right': 'Right',
-    'VolumeUp': 'MediaVolumeUp',
-    'VolumeDown': 'MediaVolumeDown',
-    'Mute': 'MediaVolumeMute',
-    'Space': 'Space',
-  };
-  
-  // Keys that don't work with globalShortcut (modifier-only keys)
-  const unsupportedKeys = ['Alt', 'ShiftRight', 'ControlRight', 'Insert'];
-  
-  Object.entries(KEY_MAP).forEach(([key, mapping]) => {
-    // Skip unsupported keys
-    if (unsupportedKeys.includes(key)) {
-      return;
-    }
-    
-    try {
-      let accelerator = acceleratorMap[key] || key;
-      globalShortcut.register(accelerator, () => {
-        sendKeyEventToRenderer(mapping.action, mapping.label);
-      });
-      SUCCESSFUL_REGISTRATIONS.push(key);
-    } catch (e) {
-      console.warn(`[ZR Electron] Failed to register global shortcut for ${key}:`, e.message);
-    }
-  });
-
-  console.log('[ZR Electron] Registered', SUCCESSFUL_REGISTRATIONS.length, 'global keyboard shortcuts');
   
   // Setup the primary window-based keyboard listener
   setupWindowKeyboardListener();
+  
+  console.log('[ZR Electron] Keyboard input ready (window-focused only)');
 }
 
 // App lifecycle
