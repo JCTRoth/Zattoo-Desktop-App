@@ -79,6 +79,10 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 600,
     
+    // Ensure window is visible
+    show: true,
+    backgroundColor: '#000000',
+    
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -104,6 +108,12 @@ function createWindow() {
 
   // Set user agent to avoid mobile detection
   mainWindow.webContents.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+  
+  // Show window when ready and focus it
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    mainWindow.focus();
+  });
 
   // Inject zattoo_inject.js when page loads
   mainWindow.webContents.on('did-finish-load', () => {
@@ -206,22 +216,77 @@ function sendKeyEventToRenderer(action, label) {
   });
 }
 
+function setupWindowKeyboardListener() {
+  // Primary keyboard input method: intercept before input reaches the page
+  // This is more reliable than globalShortcut for most keys
+  if (mainWindow && mainWindow.webContents) {
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+      // Only handle keyDown events
+      if (input.type !== 'keyDown') return;
+      
+      const key = input.key;
+      const mapping = KEY_MAP[key];
+      
+      if (mapping) {
+        // Prevent the key from reaching the page
+        event.preventDefault();
+        sendKeyEventToRenderer(mapping.action, mapping.label);
+      }
+    });
+    
+    console.log('[ZR Electron] Window keyboard listener installed');
+  }
+}
+
 function registerKeyboardShortcuts() {
   // Unregister all first to avoid duplicates
   globalShortcut.unregisterAll();
 
-  // Register all key mappings
+  // Register global shortcuts for keys that work with accelerators
+  // Note: globalShortcut is a fallback for when window doesn't have focus
+  const SUCCESSFUL_REGISTRATIONS = [];
+  
+  // Map of keys to Electron accelerator names
+  const acceleratorMap = {
+    'Backspace': 'Delete',
+    'Enter': 'Return',
+    'Escape': 'Esc',
+    'PageUp': 'PageUp',
+    'PageDown': 'PageDown',
+    'Up': 'Up',
+    'Down': 'Down',
+    'Left': 'Left',
+    'Right': 'Right',
+    'VolumeUp': 'MediaVolumeUp',
+    'VolumeDown': 'MediaVolumeDown',
+    'Mute': 'MediaVolumeMute',
+    'Space': 'Space',
+  };
+  
+  // Keys that don't work with globalShortcut (modifier-only keys)
+  const unsupportedKeys = ['Alt', 'ShiftRight', 'ControlRight', 'Insert'];
+  
   Object.entries(KEY_MAP).forEach(([key, mapping]) => {
+    // Skip unsupported keys
+    if (unsupportedKeys.includes(key)) {
+      return;
+    }
+    
     try {
-      globalShortcut.register(key, () => {
+      let accelerator = acceleratorMap[key] || key;
+      globalShortcut.register(accelerator, () => {
         sendKeyEventToRenderer(mapping.action, mapping.label);
       });
+      SUCCESSFUL_REGISTRATIONS.push(key);
     } catch (e) {
-      console.warn(`[ZR Electron] Failed to register shortcut for ${key}:`, e.message);
+      console.warn(`[ZR Electron] Failed to register global shortcut for ${key}:`, e.message);
     }
   });
 
-  console.log('[ZR Electron] Registered', Object.keys(KEY_MAP).length, 'keyboard shortcuts');
+  console.log('[ZR Electron] Registered', SUCCESSFUL_REGISTRATIONS.length, 'global keyboard shortcuts');
+  
+  // Setup the primary window-based keyboard listener
+  setupWindowKeyboardListener();
 }
 
 // App lifecycle
