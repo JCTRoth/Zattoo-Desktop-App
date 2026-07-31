@@ -13,6 +13,7 @@ use parking_lot::Mutex;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{Listener, Manager};
+use tauri::menu::Menu;
 use tokio::sync::mpsc;
 
 /// Shared application state accessible from both Rust commands and the frontend.
@@ -86,6 +87,14 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(app_state)
         .setup(move |app| {
+            // Set the default menu on macOS to prevent keyboard crash
+            // macOS requires a valid Edit menu for keyboard event handling
+            #[cfg(target_os = "macos")]
+            {
+                if let Ok(menu) = Menu::default(&app.handle()) {
+                    let _ = app.set_menu(menu);
+                }
+            }
             let input_active_clone = input_active.clone();
 
             // Spawn the global input listener in a background thread

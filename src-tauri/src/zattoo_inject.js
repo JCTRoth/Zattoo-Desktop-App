@@ -48,22 +48,11 @@
   // block them at the capture phase so Zattoo doesn't act on them.
   // Arrow keys are NOT blocked — we dispatch them intentionally for
   // program guide navigation.
+  // Do NOT block on login page or when search input has focus.
   function blockZattooShortcuts() {
-    window.addEventListener(
-      "keydown",
-      function (e) {
-        var key = e.key;
-        if (
-          key === "k" || key === "l" || key === "j" || key === "h" ||
-          key === "b" || key === "a" || key === "c" || key === "t" ||
-          key === "f" || key === "m"
-        ) {
-          e.stopImmediatePropagation();
-          e.preventDefault();
-        }
-      },
-      true
-    );
+    // DISABLED: Causes keyboard input crash on macOS in dev mode
+    // Only handleKeyEvent (for remote control keys) is needed
+    // and it has proper skip logic for login/search pages
   }
 
   // ── Embedded config (mirrors src/key-config.json v1.1) ─────────
@@ -477,8 +466,11 @@
   // withGlobalTauri: true is set in tauri.conf.json).
   function invokeRust(cmd, args) {
     try {
-      if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {
-        window.__TAURI__.core.invoke(cmd, args);
+      // Only allow Tauri IPC calls on tauri:// URLs to avoid security errors on external pages
+      if (window.location.protocol === "tauri:") {
+        if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {
+          window.__TAURI__.core.invoke(cmd, args);
+        }
       }
     } catch (e) {
       console.warn("[ZR] Tauri invoke failed for", cmd, e);
@@ -489,15 +481,23 @@
   function handleKeyEvent(jsonStr) {
     try {
       var event = JSON.parse(jsonStr);
-      console.log(
-        "[ZR] Key event:",
-        event.action,
-        event.is_press ? "\u2193" : "\u2191",
-        event.label || "",
-        event.scan_code || 0
-      );
-      if (!event.is_press) return;
-
+      if (!event || !event.is_press) return;
+      console.log("[ZR] Key event:", event.action, event.is_press ? "\u2193" : "\u2191", event.label || "", event.scan_code || 0);
+      try {
+        var href = (window.location && window.location.href) || "";
+        if (href.indexOf("/login") >= 0) { console.log("[ZR] Skip: login page"); return; }
+        var el = document && document.activeElement;
+        if (el) {
+          if (el.id === "search_input") { console.log("[ZR] Skip: search_input focus"); return; }
+          var s = el.getAttribute ? el.getAttribute("data-soul") : null;
+          if (s && s.indexOf("SEARCH") >= 0) { console.log("[ZR] Skip: SEARCH element"); return; }
+          if (el.tagName === "INPUT" && (el.type === "search" || (el.placeholder || "").toLowerCase().indexOf("search") >= 0)) { console.log("[ZR] Skip: search INPUT"); return; }
+          if (el.tagName === "BUTTON") {
+            var t = (el.title || "" + el.textContent || "" + (el.getAttribute ? el.getAttribute("aria-label") : "") || "").toLowerCase();
+            if (t.indexOf("search") >= 0) { console.log("[ZR] Skip: search BUTTON"); return; }
+          }
+        }
+      } catch(ex) {}
       var action = event.action;
       var label = event.label || "";
       showOsd(label);
@@ -807,20 +807,23 @@
       try {
         if (window.__zattooRemote) window.__zattooRemote.drm = drmInfo;
       } catch (e) {}
-      // Strategy 1: Report via Tauri event (needs core:event:allow-emit)
-      try {
-        if (
-          window.__TAURI__ &&
-          window.__TAURI__.event &&
-          window.__TAURI__.event.emit
-        ) {
-          window.__TAURI__.event.emit("drm-status", drmInfo);
+      // Only call Tauri APIs on tauri:// URLs to avoid security errors on external pages
+      if (window.location.protocol === "tauri:") {
+        // Strategy 1: Report via Tauri event (needs core:event:allow-emit)
+        try {
+          if (
+            window.__TAURI__ &&
+            window.__TAURI__.event &&
+            window.__TAURI__.event.emit
+          ) {
+            window.__TAURI__.event.emit("drm-status", drmInfo);
+          }
+        } catch (e) {
+          console.warn("[ZR] DRM: Could not report via event:", e);
         }
-      } catch (e) {
-        console.warn("[ZR] DRM: Could not report via event:", e);
+        // Strategy 2: Fallback — invoke Rust command directly
+        invokeRust("log_drm", { message: JSON.stringify(drmInfo) });
       }
-      // Strategy 2: Fallback — invoke Rust command directly
-      invokeRust("log_drm", { message: JSON.stringify(drmInfo) });
     }
 
     if (
@@ -891,7 +894,7 @@
         injectHtml();
         startMutationObserver();
         watchNav();
-        blockZattooShortcuts();
+        // blockZattooShortcuts() DISABLED - causes macOS keyboard crash
         dismissToasts();
         window.__zattooRemote = {
           handleKeyEvent: handleKeyEvent,
