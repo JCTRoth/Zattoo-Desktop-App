@@ -610,6 +610,45 @@
         case "mouse_mode":
           showOsd("Mouse Mode");
           break;
+        
+        // MXIII RF Remote specific actions
+        case "restart":
+          // Jump to start of current program in Replay TV
+          zattooAction("seek", "-99999"); // Large negative seek to go to start
+          showOsd("⏮ Restart");
+          break;
+        case "next_program":
+          // Jump to next program in Replay TV
+          zattooAction("send_key", "PageDown");
+          showOsd("⏭ Next Program");
+          break;
+        case "zoom_in":
+          // Toggle fill/zoom modes
+          zattooAction("send_key", "z"); // Common zoom key
+          showOsd("🔍+ Zoom In");
+          break;
+        case "zoom_out":
+          // Reset aspect ratio / Fit Screen
+          zattooAction("send_key", "Z"); // Common zoom out key
+          showOsd("🔍- Zoom Out");
+          break;
+        case "context_menu":
+          // Right-click behavior / More options
+          zattooAction("send_key", "ContextMenu");
+          showOsd("⋮ Context Menu");
+          break;
+        case "power":
+          // Shutdown - this would need to be handled by the Electron app
+          showOsd("🔄 Power");
+          break;
+        case "www":
+          // Web browser
+          showOsd("🌐 Web");
+          break;
+        case "mail":
+          // Mail
+          showOsd("📧 Mail");
+          break;
       }
     } catch (e) {
       console.error("[ZR] err:", e);

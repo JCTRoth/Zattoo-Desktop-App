@@ -13,6 +13,70 @@ const fs = require('fs');
 
 let mainWindow = null;
 
+// MXIII RF Remote key mappings (raw keycodes)
+const MXIII_KEY_MAP = {
+  // Power
+  '10081': { action: 'power', label: '🔄 Power' },
+  
+  // Playback controls (mouse device - c0xxx)
+  'c00cd': { action: 'play_pause', label: '⏯ Play/Pause' },
+  'c00b4': { action: 'rewind', label: '⏪ Rewind' },
+  'c00b3': { action: 'fast_forward', label: '⏩ FF' },
+  'c00b6': { action: 'restart', label: '⏮ Restart' },
+  'c00b5': { action: 'next_program', label: '⏭ Next' },
+  
+  // Zoom/Aspect
+  'c022d': { action: 'zoom_in', label: '🔍+ Zoom In' },
+  'c022e': { action: 'zoom_out', label: '🔍- Zoom Out' },
+  
+  // Volume (mouse device)
+  'c00e9': { action: 'volume_up', label: '🔊+ Vol Up' },
+  'c00ea': { action: 'volume_down', label: '🔊- Vol Down' },
+  'c00e2': { action: 'mute', label: '🔇 Mute' },
+  
+  // Navigation (keyboard device - 700xx)
+  '70052': { action: 'up', label: '▲ Up' },
+  '70051': { action: 'down', label: '▼ Down' },
+  '70050': { action: 'left', label: '← Left' },
+  '7004f': { action: 'right', label: '→ Right' },
+  '70028': { action: 'ok', label: '✓ OK' },
+  
+  // Page navigation (keyboard device)
+  '7004b': { action: 'channel_up', label: 'CH+' },
+  '7004e': { action: 'channel_down', label: 'CH-' },
+  
+  // Home & Menu
+  'c0223': { action: 'home', label: '🏠 Home' },
+  '90002': { action: 'context_menu', label: '⋮ Menu' },
+  
+  // Digit keys (keyboard device)
+  '7001e': { action: 'digit_1', label: '1' },
+  '7001f': { action: 'digit_2', label: '2' },
+  '70020': { action: 'digit_3', label: '3' },
+  '70021': { action: 'digit_4', label: '4' },
+  '70022': { action: 'digit_5', label: '5' },
+  '70023': { action: 'digit_6', label: '6' },
+  '70024': { action: 'digit_7', label: '7' },
+  '70025': { action: 'digit_8', label: '8' },
+  '70026': { action: 'digit_9', label: '9' },
+  '70027': { action: 'digit_0', label: '0' },
+  
+  // Special keys (keyboard device)
+  '7002a': { action: 'back', label: '⬅ Back' },
+  '7003c': { action: 'color_yellow', label: '🟡 Yellow' },
+  '7003b': { action: 'color_green', label: '🟢 Green' },
+  '7003d': { action: 'color_blue', label: '🔵 Blue' },
+  '7003e': { action: 'color_red', label: '🔴 Red' },
+  '7003f': { action: 'guide', label: '📋 EPG' },
+  '70040': { action: 'recordings', label: '📼 Recordings' },
+  '70065': { action: 'search', label: '🔍 Search' },
+  
+  // Other keys
+  'c0183': { action: 'settings', label: '⚙ Config' },
+  'c018a': { action: 'mail', label: '📧 Mail' },
+  'c008a': { action: 'www', label: '🌐 Web' }
+};
+
 // Key mappings (matching input_handler.rs actions)
 const KEY_MAP = {
   // Digit keys
@@ -256,10 +320,14 @@ function setupWindowKeyboardListener() {
       
       const key = input.key;
       const code = input.code;
+      const keyCode = input.keyCode ? input.keyCode.toString(16) : null;
       
-      let mapping = KEY_MAP[key];
+      let mapping = null;
       
-      // Also try matching by code for some keys
+      // First try to match by standard key name
+      mapping = KEY_MAP[key];
+      
+      // Then try matching by code for some keys
       if (!mapping) {
         const codeMap = {
           'Backspace': 'Backspace',
@@ -282,13 +350,23 @@ function setupWindowKeyboardListener() {
         }
       }
       
+      // Try MXIII raw keycodes (these come as keyCode in the input event)
+      if (!mapping && keyCode) {
+        // Convert hex keyCode to the format used in MXIII_KEY_MAP
+        const mxiiiKey = keyCode.toLowerCase();
+        mapping = MXIII_KEY_MAP[mxiiiKey];
+      }
+      
       if (mapping) {
         // For standard browser keys (Backspace, Enter, Escape), let them pass through to the page
         // This allows Zattoo's built-in keyboard handling to work naturally
         const standardKeys = ['Backspace', 'Enter', 'NumpadEnter', 'Delete', 'Escape', 'Return'];
         const isStandardKey = standardKeys.includes(key) || standardKeys.includes(code);
         
-        if (!isStandardKey) {
+        // For MXIII keys, always prevent default since they're custom keycodes
+        const isMxiiiKey = keyCode && MXIII_KEY_MAP[keyCode.toLowerCase()];
+        
+        if (!isStandardKey || isMxiiiKey) {
           // For special remote keys, prevent default and send via our handler
           event.preventDefault();
         }
@@ -298,21 +376,23 @@ function setupWindowKeyboardListener() {
         mainWindow.webContents.executeJavaScript(`window.__zrScriptInjected`).then(scriptLoaded => {
           if (scriptLoaded) {
             sendKeyEventToRenderer(mapping.action, mapping.label);
-            console.log(`[ZR Electron] Window listener: ${key} (${code}) -> ${mapping.action} ${isStandardKey ? '(passed through)' : '(handled)'}`);
+            const logSuffix = isStandardKey ? '(passed through)' : isMxiiiKey ? '(MXIII handled)' : '(handled)';
+            console.log(`[ZR Electron] Window listener: ${key} (${code}) [${keyCode}] -> ${mapping.action} ${logSuffix}`);
           } else {
-            console.log(`[ZR Electron] Window listener: ${key} (${code}) -> ${mapping.action} (script not loaded yet)`);
+            console.log(`[ZR Electron] Window listener: ${key} (${code}) [${keyCode}] -> ${mapping.action} (script not loaded yet)`);
             // Retry after a short delay
             setTimeout(() => sendKeyEventToRenderer(mapping.action, mapping.label), 100);
           }
         }).catch(() => {
           // If we can't check, try sending anyway
           sendKeyEventToRenderer(mapping.action, mapping.label);
-          console.log(`[ZR Electron] Window listener: ${key} (${code}) -> ${mapping.action} (could not check script status)`);
+          console.log(`[ZR Electron] Window listener: ${key} (${code}) [${keyCode}] -> ${mapping.action} (could not check script status)`);
         });
       }
     });
     
     console.log('[ZR Electron] Window keyboard listener installed (primary)');
+    console.log('[ZR Electron] MXIII RF Remote support enabled');
   }
 }
 
