@@ -117,8 +117,9 @@ function createWindow() {
 
   // Inject zattoo_inject.js when page loads
   mainWindow.webContents.on('did-finish-load', () => {
+    console.log('[ZR Electron] Page finished loading, injecting scripts...');
     injectScript();
-    injectKeyboardListener();
+    setTimeout(injectKeyboardListener, 500); // Small delay to ensure zattoo_inject.js is loaded
   });
 
   // Also inject on navigation
@@ -169,9 +170,12 @@ function injectScript() {
       
       // Log successful injection
       console.log('[ZR Electron] Script injected with Widevine support');
+      window.__zrScriptInjected = true;
     `;
     
-    mainWindow.webContents.executeJavaScript(electronScript).catch(e => {
+    mainWindow.webContents.executeJavaScript(electronScript).then(() => {
+      console.log('[ZR Electron] Script injection initiated');
+    }).catch(e => {
       console.error('[ZR Electron] Failed to inject script:', e);
     });
   } catch (e) {
@@ -194,6 +198,7 @@ function injectScript() {
           version: '3.0 (Electron Fallback)'
         };
       }
+      window.__zrScriptInjected = true;
       console.log('[ZR Electron] Fallback overlay initialized');
     `).catch(e2 => {
       console.error('[ZR Electron] Fallback injection failed:', e2);
@@ -224,7 +229,7 @@ function sendKeyEventToRenderer(action, label) {
 }
 
 function setupWindowKeyboardListener() {
-  // Primary keyboard input method: intercept before input reaches the page
+  // Fallback keyboard input method: intercept before input reaches the page
   // This only works when the window has focus (which is what we want)
   if (mainWindow && mainWindow.webContents) {
     mainWindow.webContents.on('before-input-event', (event, input) => {
@@ -234,14 +239,10 @@ function setupWindowKeyboardListener() {
       const key = input.key;
       const code = input.code;
       
-      // Debug logging for all keys temporarily
-      console.log('[ZR Electron] before-input-event:', { key, code, type: input.type });
-      
       let mapping = KEY_MAP[key];
       
       // Also try matching by code for some keys
       if (!mapping) {
-        // Common code-based mappings
         const codeMap = {
           'Backspace': 'Backspace',
           'Enter': 'Enter',
@@ -267,55 +268,66 @@ function setupWindowKeyboardListener() {
         // Prevent the key from reaching the page
         event.preventDefault();
         sendKeyEventToRenderer(mapping.action, mapping.label);
-        console.log('[ZR Electron] Key handled:', mapping.action, mapping.label);
       }
     });
     
-    console.log('[ZR Electron] Window keyboard listener installed');
+    console.log('[ZR Electron] Window keyboard listener installed (fallback)');
   }
 }
 
 function injectKeyboardListener() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   
-  // Build a mapping object as a JavaScript string
-  const keyMapStr = Object.entries(KEY_MAP)
-    .map(([key, mapping]) => `  '${key}': { action: '${mapping.action}', label: '${mapping.label.replace(/'/g, "\\'")}' }`)
-    .join(',\n');
-  
-  const script = `
-    (function() {
-      const KEY_MAP = {
-        ${keyMapStr}
-      };
-      
-      // Listen for keydown events at the document level
-      document.addEventListener('keydown', function(e) {
-        const key = e.key;
-        const code = e.code;
-        const mapping = KEY_MAP[key] || KEY_MAP[code];
+  // Check if script is already injected
+  mainWindow.webContents.executeJavaScript(`window.__zrScriptInjected`).then(result => {
+    if (!result) {
+      // Script not injected yet, wait and retry
+      console.log('[ZR Electron] Waiting for script injection before installing keyboard listener...');
+      setTimeout(injectKeyboardListener, 200);
+      return;
+    }
+    
+    // Build a mapping object as a JavaScript string
+    const keyMapStr = Object.entries(KEY_MAP)
+      .map(([key, mapping]) => `  '${key}': { action: '${mapping.action}', label: '${mapping.label.replace(/'/g, "\\'")}' }`)
+      .join(',\n');
+    
+    const script = `
+      (function() {
+        const KEY_MAP = {
+          ${keyMapStr}
+        };
         
-        if (mapping && window.__zattooRemote && window.__zattooRemote.handleKeyEvent) {
-          e.preventDefault();
-          e.stopPropagation();
+        // Listen for keydown events at the document level
+        document.addEventListener('keydown', function(e) {
+          const key = e.key;
+          const code = e.code;
+          const mapping = KEY_MAP[key] || KEY_MAP[code];
           
-          const eventJson = JSON.stringify({
-            action: mapping.action,
-            label: mapping.label,
-            is_press: true,
-            scan_code: 0
-          });
-          
-          window.__zattooRemote.handleKeyEvent(eventJson);
-        }
-      }, true); // Use capture phase
-      
-      console.log('[ZR Electron] DOM keyboard listener installed');
-    })();
-  `;
-  
-  mainWindow.webContents.executeJavaScript(script).catch(e => {
-    console.error('[ZR Electron] Failed to inject keyboard listener:', e);
+          if (mapping && window.__zattooRemote && window.__zattooRemote.handleKeyEvent) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const eventJson = JSON.stringify({
+              action: mapping.action,
+              label: mapping.label,
+              is_press: true,
+              scan_code: 0
+            });
+            
+            window.__zattooRemote.handleKeyEvent(eventJson);
+          }
+        }, true); // Use capture phase
+        
+        console.log('[ZR Electron] DOM keyboard listener installed');
+      })();
+    `;
+    
+    mainWindow.webContents.executeJavaScript(script).catch(e => {
+      console.error('[ZR Electron] Failed to inject keyboard listener:', e);
+    });
+  }).catch(e => {
+    console.error('[ZR Electron] Error checking script injection:', e);
   });
 }
 
