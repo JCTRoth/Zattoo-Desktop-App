@@ -513,6 +513,67 @@ describe("Navigation detection", () => {
   });
 });
 
+// ── Fullscreen restoration Tests ──────────────────────────────────
+
+describe("Fullscreen restoration", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    window.sessionStorage.clear();
+    delete (window as unknown as Record<string, unknown>)._zrFullscreenRequested;
+    delete (window as unknown as Record<string, unknown>)._zrFullscreenActive;
+    injectZattooRemote();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function addZattooFullscreenControl(): { clicks: () => number } {
+    const player = document.createElement("div");
+    player.id = "fullscreen_container";
+
+    // Match the control from the supplied Zattoo player markup. It is a div
+    // with aria-hidden="true", so the implementation must not depend on
+    // offsetParent or opacity to find it.
+    const button = document.createElement("div");
+    button.setAttribute("data-soul", "OSD_SURFACE_FULLSCREEN");
+    button.setAttribute("role", "button");
+    button.setAttribute("aria-hidden", "true");
+
+    let clickCount = 0;
+    button.addEventListener("click", () => {
+      clickCount++;
+      // Model the CSS/fullscreen state change made by Zattoo after the click.
+      player.getBoundingClientRect = () =>
+        ({ width: window.innerWidth, height: window.innerHeight } as DOMRect);
+    });
+    player.appendChild(button);
+    document.body.appendChild(player);
+
+    return { clicks: () => clickCount };
+  }
+
+  it("restores fullscreen after Up/Down channel navigation", () => {
+    const control = addZattooFullscreenControl();
+    const handler = getHandleKeyEvent();
+
+    handler!(makeKeyEvent({ action: "up", label: "Up" }));
+    vi.advanceTimersByTime(1001);
+
+    expect(control.clicks()).toBe(1);
+  });
+
+  it("restores fullscreen after number-key channel navigation", () => {
+    const control = addZattooFullscreenControl();
+    const handler = getHandleKeyEvent();
+
+    handler!(makeKeyEvent({ action: "digit_1", label: "1" }));
+    vi.advanceTimersByTime(1301);
+
+    expect(control.clicks()).toBe(1);
+  });
+});
+
 // ── DRM Detection Tests ──────────────────────────────────────────
 
 describe("DRM detection", () => {

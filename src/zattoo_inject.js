@@ -95,6 +95,8 @@
   var channelTimer = null;
   var osdTimer = null;
   var lastUrl = "";
+  var fullscreenRestoreTimer = null;
+  var fullscreenAttemptId = 0;
 
   // ── OSD injection ──────────────────────────────────────────────
   function injectStyles() {
@@ -192,6 +194,37 @@
   }
 
   // ── Zattoo DOM actions ─────────────────────────────────────────
+  function rememberFullscreenPreference() {
+    window._zrFullscreenRequested = true;
+    try {
+      // A number-key channel change replaces the document. Keep the intent
+      // available to the newly loaded /live/... page as well.
+      window.sessionStorage.setItem("zrFullscreenRequested", "1");
+    } catch (e) {}
+  }
+
+  function fullscreenWasRequested() {
+    if (window._zrFullscreenRequested) return true;
+    try {
+      return window.sessionStorage.getItem("zrFullscreenRequested") === "1";
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function scheduleFullscreenRestore(delay) {
+    rememberFullscreenPreference();
+    // A channel switch can trigger several URL/DOM updates. Coalesce them so
+    // we do not click the fullscreen control more than once.
+    if (fullscreenRestoreTimer) clearTimeout(fullscreenRestoreTimer);
+    fullscreenAttemptId++;
+    window._zrFullscreenActive = false;
+    fullscreenRestoreTimer = setTimeout(function () {
+      fullscreenRestoreTimer = null;
+      autoFullscreen(0);
+    }, typeof delay === "number" ? delay : 800);
+  }
+
   function zattooAction(action, param) {
     switch (action) {
       case "send_key":
@@ -206,6 +239,7 @@
 
       case "change_channel":
         if (!param) break;
+        scheduleFullscreenRestore(800);
         var entry = channelMap[param];
         var slug = entry ? entry.slug : null;
         var searchTerm = entry ? entry.search : param;
@@ -535,15 +569,19 @@
       switch (action) {
         case "up":
           zattooAction("send_key", "ArrowUp");
+          scheduleFullscreenRestore(1000);
           break;
         case "down":
           zattooAction("send_key", "ArrowDown");
+          scheduleFullscreenRestore(1000);
           break;
         case "channel_up":
           zattooAction("send_key", "PageUp");
+          scheduleFullscreenRestore(1000);
           break;
         case "channel_down":
           zattooAction("send_key", "PageDown");
+          scheduleFullscreenRestore(1000);
           break;
         case "left":
           zattooAction("send_key", "ArrowLeft");
@@ -656,18 +694,78 @@
   }
 
   // ── Auto-fullscreen ──────────────────────────────────────────────
-  // When a channel page loads, automatically click Zattoo's fullscreen
-  // button so the player fills the viewport. Retries for a few seconds
-  // since the player loads asynchronously after the page.
-  function autoFullscreen() {
+  // When a channel page loads, automatically activate fullscreen mode.
+  // Uses multiple strategies since Zattoo's player has a custom fullscreen implementation.
+  function isPlayerFullscreen() {
+    var player = document.getElementById("fullscreen_container");
+    var fullscreenElement =
+      document.fullscreenElement || document.webkitFullscreenElement;
+
+    if (fullscreenElement) {
+      return !player || fullscreenElement === player || player.contains(fullscreenElement);
+    }
+
+    // Zattoo can use its own CSS fullscreen state instead of exposing the
+    // Fullscreen API element. In that case the player normally covers the
+    // viewport, which is a safer signal than the old one-shot flag.
+    if (player && window.innerWidth && window.innerHeight) {
+      var rect = player.getBoundingClientRect();
+      return (
+        rect.width >= window.innerWidth * 0.95 &&
+        rect.height >= window.innerHeight * 0.95
+      );
+    }
+    return false;
+  }
+
+  function autoFullscreen(initialDelay) {
+    var requested = fullscreenWasRequested();
+    if (requested) window._zrFullscreenRequested = true;
+
+    if (isPlayerFullscreen()) {
+      window._zrFullscreenActive = true;
+      return;
+    }
+
+    // A scheduled channel restore clears this flag before reaching here. If
+    // it is still set, another fullscreen attempt is already complete.
     if (window._zrFullscreenActive) return;
+
+    var attemptId = ++fullscreenAttemptId;
     var attempts = 0;
-    var maxAttempts = 15; // 15 × 400ms = 6s of retries
+    var maxAttempts = 20; // 20 × 300ms = 6s of retries
+
     function tryFullscreen() {
+      if (attemptId !== fullscreenAttemptId) return;
       attempts++;
-      // Look for Zattoo's fullscreen surface button in the player OSD
-      var btn = document.querySelector(
-        '[data-soul="OSD_SURFACE_FULLSCREEN"],' +
+
+      if (isPlayerFullscreen()) {
+        window._zrFullscreenActive = true;
+        return;
+      }
+      if (window._zrFullscreenActive) return;
+
+      // Strategy 1: Try clicking Zattoo's OSD fullscreen button (primary method)
+      var osdBtn = document.querySelector('[data-soul="OSD_SURFACE_FULLSCREEN"]');
+      if (osdBtn) {
+        try {
+          // This control is a div with aria-hidden="true" in Zattoo's player
+          // markup, so offsetParent/opacity are not reliable here. The
+          // delegated click handler still handles the synthetic click.
+          var style = window.getComputedStyle(osdBtn);
+          if (style.display !== "none" && style.visibility !== "hidden") {
+            console.log("[ZR] Fullscreen: clicking OSD button");
+            osdBtn.click();
+            window._zrFullscreenActive = true;
+            return;
+          }
+        } catch (e) {
+          console.warn("[ZR] Fullscreen: OSD button click failed", e);
+        }
+      }
+
+      // Strategy 2: Try clicking other known fullscreen buttons
+      var otherBtns = document.querySelectorAll(
         '[data-testid*="fullscreen" i],' +
         '[aria-label*="fullscreen" i],' +
         '[title*="Fullscreen" i],' +
@@ -676,22 +774,91 @@
         '[data-soul="TEASER_BROADCAST_CONTROL_WATCH"],' +
         'button[data-soul*="WATCH" i]'
       );
-      if (btn && btn.offsetParent !== null) {
-        console.log("[ZR] Fullscreen: clicking", btn.getAttribute("data-soul") || btn.tagName);
-        try {
-          btn.click();
-          window._zrFullscreenActive = true;
-        } catch (e) {
-          console.warn("[ZR] Fullscreen: click failed", e);
+
+      for (var i = 0; i < otherBtns.length; i++) {
+        var btn = otherBtns[i];
+        if (btn.offsetParent !== null) {
+          try {
+            var style = window.getComputedStyle(btn);
+            if (style.display !== 'none' && style.visibility !== 'hidden' && parseFloat(style.opacity) > 0) {
+              console.log("[ZR] Fullscreen: clicking alternative button", btn.getAttribute("data-soul") || btn.tagName);
+              btn.click();
+              window._zrFullscreenActive = true;
+              return;
+            }
+          } catch (e) {
+            console.warn("[ZR] Fullscreen: alternative button click failed", e);
+          }
         }
-        return;
       }
+
+      // Strategy 3: Try Fullscreen API on the player container
+      var playerContainer = document.getElementById("fullscreen_container");
+      if (playerContainer) {
+        try {
+          if (playerContainer.requestFullscreen) {
+            console.log("[ZR] Fullscreen: using Fullscreen API on container");
+            var request = playerContainer.requestFullscreen();
+            if (request && typeof request.then === "function") {
+              request.then(function() {
+                window._zrFullscreenActive = true;
+              }).catch(function(e) {
+                console.warn("[ZR] Fullscreen: API request failed", e);
+              });
+            } else {
+              window._zrFullscreenActive = true;
+            }
+            return;
+          } else if (playerContainer.webkitRequestFullscreen) {
+            playerContainer.webkitRequestFullscreen();
+            window._zrFullscreenActive = true;
+            return;
+          }
+        } catch (e) {
+          console.warn("[ZR] Fullscreen: API call failed", e);
+        }
+      }
+
+      // Strategy 4: Try Fullscreen API on the video element
+      var video = document.querySelector('#player_video_node, video');
+      if (video) {
+        try {
+          if (video.requestFullscreen) {
+            console.log("[ZR] Fullscreen: using Fullscreen API on video element");
+            var videoRequest = video.requestFullscreen();
+            if (videoRequest && typeof videoRequest.then === "function") {
+              videoRequest.then(function() {
+                window._zrFullscreenActive = true;
+              }).catch(function(e) {
+                console.warn("[ZR] Fullscreen: video API request failed", e);
+              });
+            } else {
+              window._zrFullscreenActive = true;
+            }
+            return;
+          } else if (video.webkitRequestFullscreen) {
+            video.webkitRequestFullscreen();
+            window._zrFullscreenActive = true;
+            return;
+          }
+        } catch (e) {
+          console.warn("[ZR] Fullscreen: video API call failed", e);
+        }
+      }
+
+      // If we haven't succeeded yet, retry
       if (attempts < maxAttempts) {
-        setTimeout(tryFullscreen, 400);
+        setTimeout(tryFullscreen, 300);
+      } else {
+        console.log("[ZR] Fullscreen: all strategies exhausted");
       }
     }
+
     // Delay initial attempt to let the player mount after page load
-    setTimeout(tryFullscreen, 1500);
+    setTimeout(
+      tryFullscreen,
+      typeof initialDelay === "number" ? initialDelay : requested ? 0 : 1500
+    );
   }
 
   // ── Navigation detection ───────────────────────────────────────
@@ -701,8 +868,6 @@
       if (window.location.href !== lastUrl) {
         lastUrl = window.location.href;
         console.log("[ZR] URL changed to:", lastUrl);
-        // Reset fullscreen flag on navigation so it re-triggers
-        window._zrFullscreenActive = false;
         if (!document.getElementById("zrR")) {
           injectHtml();
           injectStyles();
@@ -716,8 +881,9 @@
             version: "2.0",
           };
         }
-        // After URL change, try auto-fullscreen again
-        autoFullscreen();
+        // A Zattoo channel switch may be an in-page navigation. Reapply the
+        // player fullscreen state after the new channel has mounted.
+        scheduleFullscreenRestore(0);
       }
     }, 1000);
   }
