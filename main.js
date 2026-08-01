@@ -118,16 +118,23 @@ function createWindow() {
   // Inject zattoo_inject.js when page loads
   mainWindow.webContents.on('did-finish-load', () => {
     injectScript();
+    injectKeyboardListener();
   });
 
   // Also inject on navigation
   mainWindow.webContents.on('did-navigate', () => {
-    setTimeout(injectScript, 1000);
+    setTimeout(() => {
+      injectScript();
+      injectKeyboardListener();
+    }, 1000);
   });
 
   // Re-inject if page changes (SPA navigation)
   mainWindow.webContents.on('did-navigate-in-page', () => {
-    setTimeout(injectScript, 500);
+    setTimeout(() => {
+      injectScript();
+      injectKeyboardListener();
+    }, 500);
   });
 
   // Handle window close
@@ -266,6 +273,50 @@ function setupWindowKeyboardListener() {
     
     console.log('[ZR Electron] Window keyboard listener installed');
   }
+}
+
+function injectKeyboardListener() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  
+  // Build a mapping object as a JavaScript string
+  const keyMapStr = Object.entries(KEY_MAP)
+    .map(([key, mapping]) => `  '${key}': { action: '${mapping.action}', label: '${mapping.label.replace(/'/g, "\\'")}' }`)
+    .join(',\n');
+  
+  const script = `
+    (function() {
+      const KEY_MAP = {
+        ${keyMapStr}
+      };
+      
+      // Listen for keydown events at the document level
+      document.addEventListener('keydown', function(e) {
+        const key = e.key;
+        const code = e.code;
+        const mapping = KEY_MAP[key] || KEY_MAP[code];
+        
+        if (mapping && window.__zattooRemote && window.__zattooRemote.handleKeyEvent) {
+          e.preventDefault();
+          e.stopPropagation();
+          
+          const eventJson = JSON.stringify({
+            action: mapping.action,
+            label: mapping.label,
+            is_press: true,
+            scan_code: 0
+          });
+          
+          window.__zattooRemote.handleKeyEvent(eventJson);
+        }
+      }, true); // Use capture phase
+      
+      console.log('[ZR Electron] DOM keyboard listener installed');
+    })();
+  `;
+  
+  mainWindow.webContents.executeJavaScript(script).catch(e => {
+    console.error('[ZR Electron] Failed to inject keyboard listener:', e);
+  });
 }
 
 function registerKeyboardShortcuts() {
