@@ -1,5 +1,5 @@
 /**
- * Zattoo Remote - Electron Main Process
+ * Zattoo Desktop App usable by a USB Remote - Electron Main Process
  * 
  * Handles:
  * - Window creation with Widevine-enabled Chromium

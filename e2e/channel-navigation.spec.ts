@@ -69,7 +69,7 @@ function logContains(logs: Array<{ text: string }>, substr: string): boolean {
 
 // ── Tests ─────────────────────────────────────────────────────────
 
-test.describe("Zattoo Remote — Injected Script E2E", () => {
+test.describe("Zattoo Desktop App usable by a USB Remote — Injected Script E2E", () => {
   test("inject script initializes correctly", async ({ page }) => {
     const consoleMsgs: Array<{ type: string; text: string }> = [];
     page.on("console", msg => consoleMsgs.push({ type: msg.type(), text: msg.text() }));

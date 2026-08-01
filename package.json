@@ -1,7 +1,7 @@
 {
   "name": "zattoo-remote",
   "version": "1.0.0",
-  "description": "Zattoo Remote Controller - Electron App with Full DRM Support",
+  "description": "Zattoo Desktop App usable by a USB Remote Controller - Electron App with Full DRM Support",
   "main": "main.js",
   "type": "commonjs",
   "scripts": {
@@ -35,7 +35,7 @@
   },
   "build": {
     "appId": "com.zattoo.remote",
-    "productName": "Zattoo Remote",
+    "productName": "Zattoo Desktop App usable by a USB Remote",
     "files": [
       "**/*",
       "index.html",

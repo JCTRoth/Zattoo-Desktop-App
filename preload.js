@@ -1,5 +1,5 @@
 /**
- * Zattoo Remote - Electron Preload Script
+ * Zattoo Desktop App usable by a USB Remote - Electron Preload Script
  * 
  * Bridge between main process and renderer process.
  * Exposes safe APIs to the renderer.

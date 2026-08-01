@@ -1,6 +1,14 @@
-# Zattoo Remote
+# Zattoo Desktop App usable by a USB Remote
 
-A **full-featured Electron-based remote control** for [Zattoo](https://zattoo.com) that solves the DRM problem. Built with Electron to ensure Widevine DRM support for all channels including RTL, Sat.1, ProSieben, and VOX.
+This program makes it possible to control Zattoo with a USB TV Remote.
+It is a **cross-platform desktop application** built with Electron,
+which allows for **full DRM support** for all channels, including RTL, Sat.1, ProSieben, and VOX.
+
+I use a MX3 TV Remote that is connected via a USB dongle to my old Mac Mini that is now my smart TV box.
+
+https://wiki.mythtv.org/wiki/MX3_Air_Mouse_Remote
+
+But the program should work with any USB remote that sends standard keyboard events (HID devices).
 
 ## Features
 

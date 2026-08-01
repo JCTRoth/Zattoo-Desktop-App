@@ -1,5 +1,5 @@
 /**
- * Zattoo Remote — Overlay injection script v3.
+ * Zattoo Desktop App usable by a USB Remote — Overlay injection script v3.
  *
  * Injected into Zattoo via Rust's webview.eval() after page load.
  * Exposes window.__zattooRemote.handleKeyEvent() which Rust calls
