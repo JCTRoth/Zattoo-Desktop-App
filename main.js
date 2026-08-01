@@ -32,12 +32,18 @@ const KEY_MAP = {
   'Down': { action: 'down', label: '▼ Down' },
   'Left': { action: 'left', label: '← Left' },
   'Right': { action: 'right', label: '→ Right' },
+  'ArrowUp': { action: 'up', label: '▲ Up' },
+  'ArrowDown': { action: 'down', label: '▼ Down' },
+  'ArrowLeft': { action: 'left', label: '← Left' },
+  'ArrowRight': { action: 'right', label: '→ Right' },
   
   // Navigation keys
   'Return': { action: 'ok', label: 'OK' },
   'Enter': { action: 'ok', label: 'OK' },
+  'NumpadEnter': { action: 'ok', label: 'OK' },
   'Escape': { action: 'back', label: '⬅ Back' },
   'Backspace': { action: 'back', label: '⬅ Back' },
+  'Delete': { action: 'back', label: '⬅ Back' },
   
   // Channel navigation
   'PageUp': { action: 'channel_up', label: 'CH+' },
@@ -71,6 +77,10 @@ const KEY_MAP = {
   'Space': { action: 'play_pause', label: '▶ Play/Pause' },
   'Insert': { action: 'mouse_mode', label: '🖱 Mouse Mode' }
 };
+
+// Track injection state to prevent duplicates
+let scriptInjected = false;
+let keyboardListenerInjected = false;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -119,22 +129,25 @@ function createWindow() {
   mainWindow.webContents.on('did-finish-load', () => {
     console.log('[ZR Electron] Page finished loading, injecting scripts...');
     injectScript();
-    setTimeout(injectKeyboardListener, 500); // Small delay to ensure zattoo_inject.js is loaded
+    // Note: DOM keyboard listener disabled to avoid duplicate events with window listener
   });
 
   // Also inject on navigation
   mainWindow.webContents.on('did-navigate', () => {
+    resetInjectionState();
     setTimeout(() => {
       injectScript();
-      injectKeyboardListener();
+      // Note: DOM keyboard listener disabled to avoid duplicate events with window listener
     }, 1000);
   });
 
   // Re-inject if page changes (SPA navigation)
   mainWindow.webContents.on('did-navigate-in-page', () => {
     setTimeout(() => {
-      injectScript();
-      injectKeyboardListener();
+      if (!scriptInjected) {
+        injectScript();
+      }
+      // Note: DOM keyboard listener disabled to avoid duplicate events with window listener
     }, 500);
   });
 
@@ -147,7 +160,7 @@ function createWindow() {
 }
 
 function injectScript() {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (!mainWindow || mainWindow.isDestroyed() || scriptInjected) return;
 
   const injectPath = path.join(__dirname, 'src/zattoo_inject.js');
   
@@ -174,7 +187,8 @@ function injectScript() {
     `;
     
     mainWindow.webContents.executeJavaScript(electronScript).then(() => {
-      console.log('[ZR Electron] Script injection initiated');
+      console.log('[ZR Electron] Script injection completed');
+      scriptInjected = true;
     }).catch(e => {
       console.error('[ZR Electron] Failed to inject script:', e);
     });
@@ -200,7 +214,9 @@ function injectScript() {
       }
       window.__zrScriptInjected = true;
       console.log('[ZR Electron] Fallback overlay initialized');
-    `).catch(e2 => {
+    `).then(() => {
+      scriptInjected = true;
+    }).catch(e2 => {
       console.error('[ZR Electron] Fallback injection failed:', e2);
     });
   }
@@ -226,10 +242,12 @@ function sendKeyEventToRenderer(action, label) {
   `).catch(e => {
     console.error('[ZR Electron] Failed to send key event:', e);
   });
+  
+  console.log(`[ZR Electron] Sent key event: ${action} (${label})`);
 }
 
 function setupWindowKeyboardListener() {
-  // Fallback keyboard input method: intercept before input reaches the page
+  // Primary keyboard input method: intercept before input reaches the page
   // This only works when the window has focus (which is what we want)
   if (mainWindow && mainWindow.webContents) {
     mainWindow.webContents.on('before-input-event', (event, input) => {
@@ -265,18 +283,41 @@ function setupWindowKeyboardListener() {
       }
       
       if (mapping) {
-        // Prevent the key from reaching the page
-        event.preventDefault();
-        sendKeyEventToRenderer(mapping.action, mapping.label);
+        // For standard browser keys (Backspace, Enter, Escape), let them pass through to the page
+        // This allows Zattoo's built-in keyboard handling to work naturally
+        const standardKeys = ['Backspace', 'Enter', 'NumpadEnter', 'Delete', 'Escape', 'Return'];
+        const isStandardKey = standardKeys.includes(key) || standardKeys.includes(code);
+        
+        if (!isStandardKey) {
+          // For special remote keys, prevent default and send via our handler
+          event.preventDefault();
+        }
+        
+        // Send the event to our handler for OSD display and other processing
+        // Check if script is loaded before sending events
+        mainWindow.webContents.executeJavaScript(`window.__zrScriptInjected`).then(scriptLoaded => {
+          if (scriptLoaded) {
+            sendKeyEventToRenderer(mapping.action, mapping.label);
+            console.log(`[ZR Electron] Window listener: ${key} (${code}) -> ${mapping.action} ${isStandardKey ? '(passed through)' : '(handled)'}`);
+          } else {
+            console.log(`[ZR Electron] Window listener: ${key} (${code}) -> ${mapping.action} (script not loaded yet)`);
+            // Retry after a short delay
+            setTimeout(() => sendKeyEventToRenderer(mapping.action, mapping.label), 100);
+          }
+        }).catch(() => {
+          // If we can't check, try sending anyway
+          sendKeyEventToRenderer(mapping.action, mapping.label);
+          console.log(`[ZR Electron] Window listener: ${key} (${code}) -> ${mapping.action} (could not check script status)`);
+        });
       }
     });
     
-    console.log('[ZR Electron] Window keyboard listener installed (fallback)');
+    console.log('[ZR Electron] Window keyboard listener installed (primary)');
   }
 }
 
 function injectKeyboardListener() {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (!mainWindow || mainWindow.isDestroyed() || keyboardListenerInjected) return;
   
   // Check if script is already injected
   mainWindow.webContents.executeJavaScript(`window.__zrScriptInjected`).then(result => {
@@ -298,11 +339,36 @@ function injectKeyboardListener() {
           ${keyMapStr}
         };
         
+        // Enhanced key matching function
+        function getKeyMapping(key, code) {
+          // Direct key match
+          if (KEY_MAP[key]) return KEY_MAP[key];
+          
+          // Code match (for special keys like NumpadEnter, Delete, etc.)
+          if (KEY_MAP[code]) return KEY_MAP[code];
+          
+          // Additional code mappings for cross-platform compatibility
+          const codeMap = {
+            'NumpadEnter': 'Enter',
+            'Delete': 'Backspace',
+            'ArrowUp': 'Up',
+            'ArrowDown': 'Down',
+            'ArrowLeft': 'Left',
+            'ArrowRight': 'Right'
+          };
+          
+          if (codeMap[code] && KEY_MAP[codeMap[code]]) {
+            return KEY_MAP[codeMap[code]];
+          }
+          
+          return null;
+        }
+        
         // Listen for keydown events at the document level
         document.addEventListener('keydown', function(e) {
           const key = e.key;
           const code = e.code;
-          const mapping = KEY_MAP[key] || KEY_MAP[code];
+          const mapping = getKeyMapping(key, code);
           
           if (mapping && window.__zattooRemote && window.__zattooRemote.handleKeyEvent) {
             e.preventDefault();
@@ -323,12 +389,22 @@ function injectKeyboardListener() {
       })();
     `;
     
-    mainWindow.webContents.executeJavaScript(script).catch(e => {
+    mainWindow.webContents.executeJavaScript(script).then(() => {
+      console.log('[ZR Electron] DOM keyboard listener installation completed');
+      keyboardListenerInjected = true;
+    }).catch(e => {
       console.error('[ZR Electron] Failed to inject keyboard listener:', e);
     });
   }).catch(e => {
     console.error('[ZR Electron] Error checking script injection:', e);
   });
+}
+
+function resetInjectionState() {
+  // Reset injection flags when navigating to a new page
+  scriptInjected = false;
+  keyboardListenerInjected = false;
+  console.log('[ZR Electron] Injection state reset for new page');
 }
 
 function registerKeyboardShortcuts() {
@@ -341,6 +417,8 @@ function registerKeyboardShortcuts() {
   setupWindowKeyboardListener();
   
   console.log('[ZR Electron] Keyboard input ready (window-focused only)');
+  console.log('[ZR Electron] Standard keys (Backspace, Enter, Escape) will pass through to the page');
+  console.log('[ZR Electron] Special remote keys will be handled by the app');
 }
 
 // App lifecycle
