@@ -320,6 +320,8 @@ function setupWindowKeyboardListener() {
       
       const key = input.key;
       const code = input.code;
+      // Note: Electron's Input object does NOT have keyCode property
+      // We use 'code' for MXIII RF Remote key matching
       const keyCode = input.keyCode ? input.keyCode.toString(16) : null;
       
       let mapping = null;
@@ -350,11 +352,16 @@ function setupWindowKeyboardListener() {
         }
       }
       
-      // Try MXIII raw keycodes (these come as keyCode in the input event)
-      if (!mapping && keyCode) {
-        // Convert hex keyCode to the format used in MXIII_KEY_MAP
-        const mxiiiKey = keyCode.toLowerCase();
+      // Try MXIII raw keycodes - match against the 'code' property
+      // MXIII RF Remote sends custom codes like 'c00cd', '70052', etc.
+      if (!mapping && code) {
+        const mxiiiKey = code.toLowerCase();
         mapping = MXIII_KEY_MAP[mxiiiKey];
+      }
+      
+      // Also try keyCode as fallback (for compatibility)
+      if (!mapping && keyCode) {
+        mapping = MXIII_KEY_MAP[keyCode.toLowerCase()];
       }
       
       if (mapping) {
@@ -364,7 +371,8 @@ function setupWindowKeyboardListener() {
         const isStandardKey = standardKeys.includes(key) || standardKeys.includes(code);
         
         // For MXIII keys, always prevent default since they're custom keycodes
-        const isMxiiiKey = keyCode && MXIII_KEY_MAP[keyCode.toLowerCase()];
+        const isMxiiiKey = (code && MXIII_KEY_MAP[code.toLowerCase()]) || 
+                       (keyCode && MXIII_KEY_MAP[keyCode.toLowerCase()]);
         
         if (!isStandardKey || isMxiiiKey) {
           // For special remote keys, prevent default and send via our handler
