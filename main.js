@@ -299,18 +299,22 @@ function checkAuthAndRedirect() {
       return;
     }
     
+    console.log('[ZR Electron] checkAuth: checking auth keys (attempt', checkCount + ')');
     mainWindow.webContents.executeJavaScript(`
       (() => {
         // Don't redirect if already on login page
         if (window.location.href.indexOf('/login') >= 0) {
+          console.log('[ZR checkAuth] Already on login page, stopping redirect');
           return true;
         }
         const authKeys = ${JSON.stringify(authKeys)};
         for (const key of authKeys) {
           if (localStorage.getItem(key)) {
+            console.log('[ZR checkAuth] Found auth key:', key);
             return true;
           }
         }
+        console.log('[ZR checkAuth] No auth keys found in localStorage');
         return false;
       })()
     `).then(hasAuth => {
@@ -386,7 +390,8 @@ function createWindow() {
   });
 
   // Also inject on navigation
-  mainWindow.webContents.on('did-navigate', () => {
+  mainWindow.webContents.on('did-navigate', (event, url) => {
+    console.log('[ZR Electron] Navigated to:', url);
     resetInjectionState();
     setTimeout(() => {
       injectScript();
@@ -395,7 +400,8 @@ function createWindow() {
   });
 
   // Re-inject if page changes (SPA navigation)
-  mainWindow.webContents.on('did-navigate-in-page', () => {
+  mainWindow.webContents.on('did-navigate-in-page', (event, url) => {
+    console.log('[ZR Electron] Navigated in-page to:', url);
     setTimeout(() => {
       if (!scriptInjected) {
         injectScript();
@@ -413,9 +419,18 @@ function createWindow() {
 }
 
 function injectScript() {
-  if (!mainWindow || mainWindow.isDestroyed() || scriptInjected) return;
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    console.log('[ZR Electron] injectScript: window not available');
+    return;
+  }
+  if (scriptInjected) {
+    console.log('[ZR Electron] injectScript: already injected');
+    return;
+  }
 
+  console.log('[ZR Electron] injectScript: attempting to inject...');
   const injectPath = path.join(__dirname, 'src/zattoo_inject.js');
+  console.log('[ZR Electron] injectScript: path =', injectPath);
   
   try {
     const scriptContent = fs.readFileSync(injectPath, 'utf8');
@@ -447,6 +462,7 @@ function injectScript() {
     });
   } catch (e) {
     console.error('[ZR Electron] Failed to read inject script:', e);
+    console.error('[ZR Electron] Error details:', e.stack);
     console.log('[ZR Electron] Trying fallback injection...');
     
     // Fallback: inject a minimal version
