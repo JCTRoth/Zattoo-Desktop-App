@@ -225,12 +225,42 @@ function setupWindowKeyboardListener() {
       if (input.type !== 'keyDown') return;
       
       const key = input.key;
-      const mapping = KEY_MAP[key];
+      const code = input.code;
+      
+      // Debug logging for all keys temporarily
+      console.log('[ZR Electron] before-input-event:', { key, code, type: input.type });
+      
+      let mapping = KEY_MAP[key];
+      
+      // Also try matching by code for some keys
+      if (!mapping) {
+        // Common code-based mappings
+        const codeMap = {
+          'Backspace': 'Backspace',
+          'Enter': 'Enter',
+          'NumpadEnter': 'Enter',
+          'Escape': 'Escape',
+          'Delete': 'Backspace',  // On macOS, Backspace has code 'Delete'
+          'ArrowUp': 'Up',
+          'ArrowDown': 'Down',
+          'ArrowLeft': 'Left',
+          'ArrowRight': 'Right',
+          'PageUp': 'PageUp',
+          'PageDown': 'PageDown',
+          'VolumeUp': 'VolumeUp',
+          'VolumeDown': 'VolumeDown',
+        };
+        const codeKey = codeMap[code];
+        if (codeKey) {
+          mapping = KEY_MAP[codeKey];
+        }
+      }
       
       if (mapping) {
         // Prevent the key from reaching the page
         event.preventDefault();
         sendKeyEventToRenderer(mapping.action, mapping.label);
+        console.log('[ZR Electron] Key handled:', mapping.action, mapping.label);
       }
     });
     
