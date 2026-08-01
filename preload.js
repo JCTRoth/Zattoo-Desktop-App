@@ -24,7 +24,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   }
 });
 
-// Also expose __zattooRemote for compatibility with existing code
-contextBridge.exposeInMainWorld('__zattooRemote', {
-  // This will be populated by the injected script
-});
+// Note: __zattooRemote is injected directly into the renderer via executeJavaScript
+// in main.js, so we don't need to expose it here.

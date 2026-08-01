@@ -13,6 +13,126 @@ const fs = require('fs');
 
 let mainWindow = null;
 
+// Channel mapping for digit keys (from zattoo_inject.js)
+const CHANNEL_MAP = {
+  "0": { name: "arte", search: "arte", slug: "arte" },
+  "1": { name: "Das Erste", search: "Das Erste", slug: "daserste" },
+  "2": { name: "ZDF", search: "ZDF", slug: "zdf" },
+  "3": { name: "RTL", search: "RTL", slug: "rtl_deutschland" },
+  "4": { name: "Sat.1", search: "Sat.1", slug: "sat1_deutschland" },
+  "5": { name: "ProSieben", search: "ProSieben", slug: "pro7_deutschland" },
+  "6": { name: "VOX", search: "VOX", slug: "vox_deutschland" },
+  "7": { name: "kabel eins", search: "kabel eins", slug: "kabel1_deutschland" },
+  "8": { name: "RTL Zwei", search: "RTL Zwei", slug: "rtl2_deutschland" },
+  "9": { name: "3sat", search: "3sat", slug: "3sat" },
+  "11": { name: "ZDFneo", search: "ZDFneo", slug: "zdfneo" },
+  "22": { name: "ZDFinfo", search: "ZDFinfo", slug: "zdfinfo" },
+  "33": { name: "sixx", search: "sixx", slug: "sixx_deutschland" },
+  "44": { name: "DMAX", search: "DMAX", slug: "dmax_deutschland" },
+  "55": { name: "Tele 5", search: "Tele 5", slug: "tele5_deutschland" },
+  "66": { name: "N24 Doku", search: "N24 Doku", slug: "welt_deutschland" },
+  "77": { name: "Comedy Central", search: "Comedy Central", slug: "comedycentral_deutschland" },
+  "88": { name: "Nitro", search: "Nitro", slug: "nitro_deutschland" },
+  "99": { name: "Super RTL", search: "Super RTL", slug: "superrtl_deutschland" },
+};
+
+// Action descriptions for logging
+const ACTION_DESCRIPTIONS = {
+  // Digit keys - will be resolved to channel names
+  'digit_0': () => `→ ${CHANNEL_MAP["0"].name}`,
+  'digit_1': () => `→ ${CHANNEL_MAP["1"].name}`,
+  'digit_2': () => `→ ${CHANNEL_MAP["2"].name}`,
+  'digit_3': () => `→ ${CHANNEL_MAP["3"].name}`,
+  'digit_4': () => `→ ${CHANNEL_MAP["4"].name}`,
+  'digit_5': () => `→ ${CHANNEL_MAP["5"].name}`,
+  'digit_6': () => `→ ${CHANNEL_MAP["6"].name}`,
+  'digit_7': () => `→ ${CHANNEL_MAP["7"].name}`,
+  'digit_8': () => `→ ${CHANNEL_MAP["8"].name}`,
+  'digit_9': () => `→ ${CHANNEL_MAP["9"].name}`,
+  
+  // Navigation
+  'up': () => 'Navigate Up',
+  'down': () => 'Navigate Down',
+  'left': () => 'Navigate Left',
+  'right': () => 'Navigate Right',
+  
+  // Channel navigation
+  'channel_up': () => 'Channel Up',
+  'channel_down': () => 'Channel Down',
+  
+  // OK/Back
+  'ok': () => 'Select',
+  'back': () => 'Go Back',
+  
+  // Playback
+  'play_pause': () => 'Play/Pause',
+  'rewind': () => 'Rewind -15s',
+  'fast_forward': () => 'Fast Forward +15s',
+  'stop': () => 'Stop',
+  'restart': () => 'Restart',
+  'next_program': () => 'Next Program',
+  
+  // Volume
+  'volume_up': () => 'Volume Up',
+  'volume_down': () => 'Volume Down',
+  'mute': () => 'Toggle Mute',
+  
+  // Colored buttons
+  'color_red': () => 'Red Button',
+  'color_green': () => 'Green Button',
+  'color_yellow': () => 'Yellow Button',
+  'color_blue': () => 'Blue Button',
+  
+  // Menu/Guide
+  'guide': () => 'Open EPG Guide',
+  'menu': () => 'Open Menu',
+  'home': () => 'Go Home',
+  'settings': () => 'Open Settings',
+  'account': () => 'Open Account',
+  'recordings': () => 'Open Recordings',
+  'search': () => 'Open Search',
+  'context_menu': () => 'Open Context Menu',
+  
+  // Other
+  'record': () => 'Record',
+  'www': () => 'Open Web',
+  'mail': () => 'Open Mail',
+  'zoom_in': () => 'Zoom In',
+  'zoom_out': () => 'Zoom Out',
+  'mouse_mode': () => 'Toggle Mouse Mode',
+  'power': () => 'Power',
+  
+  // MXIII specific
+  'next_track': () => 'Next Track',
+  'previous_track': () => 'Previous Track',
+};
+
+function getActionDescription(action, key) {
+  // For digit keys, check if we have a specific channel mapping
+  if (action && action.startsWith('digit_')) {
+    const digit = action.split('_')[1];
+    if (CHANNEL_MAP[digit]) {
+      return `→ ${CHANNEL_MAP[digit].name}`;
+    }
+    return `→ Channel ${digit}`;
+  }
+  
+  // Look up in action descriptions
+  if (ACTION_DESCRIPTIONS[action]) {
+    return ACTION_DESCRIPTIONS[action]();
+  }
+  
+  // Fallback to label from KEY_MAP or MXIII_KEY_MAP
+  if (KEY_MAP[key]?.label) {
+    return KEY_MAP[key].label;
+  }
+  if (MXIII_KEY_MAP[key]?.label) {
+    return MXIII_KEY_MAP[key].label;
+  }
+  
+  return action || 'Unknown';
+}
+
 // MXIII RF Remote key mappings (raw keycodes)
 const MXIII_KEY_MAP = {
   // Power
@@ -146,6 +266,72 @@ const KEY_MAP = {
 let scriptInjected = false;
 let keyboardListenerInjected = false;
 
+function checkAuthAndRedirect() {
+  // Common Zattoo auth key names to check in localStorage
+  const authKeys = [
+    'access_token',
+    'auth_token',
+    'zattoo_token',
+    'jwt_token',
+    'session_token',
+    'auth',
+    'session',
+    'user',
+    'credentials'
+  ];
+  
+  let hasRedirected = false;
+  let checkCount = 0;
+  const MAX_CHECKS = 20; // Check for 10 seconds (500ms * 20)
+  
+  // Check for auth keys after page loads
+  const checkAuth = setInterval(() => {
+    checkCount++;
+    
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      clearInterval(checkAuth);
+      return;
+    }
+    
+    // Stop if we've already redirected or max checks reached
+    if (hasRedirected || checkCount >= MAX_CHECKS) {
+      clearInterval(checkAuth);
+      return;
+    }
+    
+    mainWindow.webContents.executeJavaScript(`
+      (() => {
+        // Don't redirect if already on login page
+        if (window.location.href.indexOf('/login') >= 0) {
+          return true;
+        }
+        const authKeys = ${JSON.stringify(authKeys)};
+        for (const key of authKeys) {
+          if (localStorage.getItem(key)) {
+            return true;
+          }
+        }
+        return false;
+      })()
+    `).then(hasAuth => {
+      if (!hasAuth && !hasRedirected) {
+        hasRedirected = true;
+        console.log('[ZR Electron] No auth key found, redirecting to login page');
+        mainWindow.loadURL('https://zattoo.com/login');
+        clearInterval(checkAuth);
+      } else if (hasAuth) {
+        console.log('[ZR Electron] Auth key found, staying on main page');
+        clearInterval(checkAuth);
+      }
+    }).catch(e => {
+      console.error('[ZR Electron] Error checking auth:', e);
+      if (checkCount >= MAX_CHECKS) {
+        clearInterval(checkAuth);
+      }
+    });
+  }, 500);
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -179,6 +365,9 @@ function createWindow() {
 
   // Load Zattoo
   mainWindow.loadURL('https://zattoo.com');
+  
+  // Check for auth key and redirect to login if not present
+  checkAuthAndRedirect();
 
   // Set user agent to avoid mobile detection
   mainWindow.webContents.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
@@ -202,7 +391,7 @@ function createWindow() {
     setTimeout(() => {
       injectScript();
       // Note: DOM keyboard listener disabled to avoid duplicate events with window listener
-    }, 1000);
+    }, 100);
   });
 
   // Re-inject if page changes (SPA navigation)
@@ -212,7 +401,7 @@ function createWindow() {
         injectScript();
       }
       // Note: DOM keyboard listener disabled to avoid duplicate events with window listener
-    }, 500);
+    }, 100);
   });
 
   // Handle window close
@@ -300,14 +489,21 @@ function sendKeyEventToRenderer(action, label) {
   const escapedJson = eventJson.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   
   mainWindow.webContents.executeJavaScript(`
-    if (window.__zattooRemote && window.__zattooRemote.handleKeyEvent) {
+    var hasHandler = window.__zattooRemote && window.__zattooRemote.handleKeyEvent;
+    if (hasHandler) {
       window.__zattooRemote.handleKeyEvent('${escapedJson}');
     }
-  `).catch(e => {
+    hasHandler;
+  `).then(hasHandler => {
+    if (!hasHandler) {
+      console.log('[ZR Electron] Warning: handleKeyEvent not available in renderer');
+    }
+  }).catch(e => {
     console.error('[ZR Electron] Failed to send key event:', e);
   });
   
-  console.log(`[ZR Electron] Sent key event: ${action} (${label})`);
+  const actionDesc = getActionDescription(action, null);
+  console.log(`[ZR Electron] Sent key event: ${action} (${label}) [${actionDesc}]`);
 }
 
 function setupWindowKeyboardListener() {
@@ -381,20 +577,21 @@ function setupWindowKeyboardListener() {
         
         // Send the event to our handler for OSD display and other processing
         // Check if script is loaded before sending events
+        const actionDesc = getActionDescription(mapping.action, key);
         mainWindow.webContents.executeJavaScript(`window.__zrScriptInjected`).then(scriptLoaded => {
           if (scriptLoaded) {
             sendKeyEventToRenderer(mapping.action, mapping.label);
             const logSuffix = isStandardKey ? '(passed through)' : isMxiiiKey ? '(MXIII handled)' : '(handled)';
-            console.log(`[ZR Electron] Window listener: ${key} (${code}) [${keyCode}] -> ${mapping.action} ${logSuffix}`);
+            console.log(`[ZR Electron] Window listener: ${key} (${code}) [${actionDesc}] -> ${mapping.action} ${logSuffix}`);
           } else {
-            console.log(`[ZR Electron] Window listener: ${key} (${code}) [${keyCode}] -> ${mapping.action} (script not loaded yet)`);
+            console.log(`[ZR Electron] Window listener: ${key} (${code}) [${actionDesc}] -> ${mapping.action} (script not loaded yet)`);
             // Retry after a short delay
             setTimeout(() => sendKeyEventToRenderer(mapping.action, mapping.label), 100);
           }
         }).catch(() => {
           // If we can't check, try sending anyway
           sendKeyEventToRenderer(mapping.action, mapping.label);
-          console.log(`[ZR Electron] Window listener: ${key} (${code}) [${keyCode}] -> ${mapping.action} (could not check script status)`);
+          console.log(`[ZR Electron] Window listener: ${key} (${code}) [${actionDesc}] -> ${mapping.action} (could not check script status)`);
         });
       }
     });

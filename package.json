@@ -19,7 +19,7 @@
     "test:e2e:ui": "playwright test --headed"
   },
   "dependencies": {
-    "electron": "^41.7.1"
+    "electron": "^43.2.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
